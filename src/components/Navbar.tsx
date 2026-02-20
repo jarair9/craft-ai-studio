@@ -1,8 +1,14 @@
 import { motion } from "framer-motion";
-import { Zap, Github, BookOpen } from "lucide-react";
+import { Zap, Github, BookOpen, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const Navbar = () => {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
   return (
     <motion.nav
       initial={{ y: -20, opacity: 0 }}
@@ -11,7 +17,7 @@ const Navbar = () => {
       className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl"
     >
       <div className="container flex h-16 items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate("/")}>
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
             <Zap className="h-4 w-4 text-primary" />
           </div>
@@ -35,9 +41,32 @@ const Navbar = () => {
           <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground cursor-pointer">
             <BookOpen className="h-4 w-4" />
           </Button>
-          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer font-medium">
-            Sign In
-          </Button>
+          {user ? (
+            <div className="flex items-center gap-2">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={user.user_metadata?.avatar_url} />
+                <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                  {(user.user_metadata?.full_name || user.email || "U").charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={signOut}
+                className="text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer font-medium"
+              onClick={() => navigate("/auth")}
+            >
+              Sign In
+            </Button>
+          )}
         </div>
       </div>
     </motion.nav>
