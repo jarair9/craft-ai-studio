@@ -50,6 +50,8 @@ export type Database = {
           description: string | null
           id: string
           name: string
+          sandbox_id: string | null
+          sandbox_url: string | null
           status: string
           template: string | null
           updated_at: string
@@ -60,6 +62,8 @@ export type Database = {
           description?: string | null
           id?: string
           name: string
+          sandbox_id?: string | null
+          sandbox_url?: string | null
           status?: string
           template?: string | null
           updated_at?: string
@@ -70,8 +74,37 @@ export type Database = {
           description?: string | null
           id?: string
           name?: string
+          sandbox_id?: string | null
+          sandbox_url?: string | null
           status?: string
           template?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_api_keys: {
+        Row: {
+          api_key: string
+          created_at: string
+          id: string
+          provider: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          created_at?: string
+          id?: string
+          provider: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          created_at?: string
+          id?: string
+          provider?: string
           updated_at?: string
           user_id?: string
         }
