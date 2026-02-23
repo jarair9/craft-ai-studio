@@ -53,7 +53,6 @@ export function useSandbox(projectId: string | undefined) {
       }
 
       addTerminalLine("output", `Sandbox created: ${id}`);
-      await listFiles(id, "/home/user");
       return id;
     } catch (e: any) {
       addTerminalLine("error", `Failed to create sandbox: ${e.message}`);
