@@ -38,10 +38,10 @@ export function useSandbox(projectId: string | undefined) {
       const clientId = data.clientID || data.clientId;
       setSandboxId(id);
 
-      // Build preview URL
-      const url = clientId
-        ? `https://${id}-${clientId}.e2b.dev`
-        : `https://${id}.e2b.dev`;
+      // Build preview URL — E2B format: https://{port}-{sandboxID}.e2b.dev
+      // Port 3000 is the default for most dev servers
+      const previewPort = 3000;
+      const url = `https://${previewPort}-${id}.e2b.dev`;
       setSandboxUrl(url);
 
       // Update project with sandbox info
