@@ -6,7 +6,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const E2B_API = "https://api.e2b.dev/v1";
+const E2B_API = "https://api.e2b.app";
 
 async function e2bFetch(path: string, opts: RequestInit = {}) {
   const apiKey = Deno.env.get("E2B_API_KEY");
