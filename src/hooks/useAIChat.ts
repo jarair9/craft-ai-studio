@@ -72,6 +72,10 @@ export function useAIChat() {
   const [provider, setProvider] = useState("lovable");
   const [model, setModel] = useState("gemini-flash");
   const [userApiKeys, setUserApiKeys] = useState<Record<string, string>>({});
+  const [initialPromptSent, setInitialPromptSent] = useState(false);
+
+  // Callback to receive file writes from parsed AI output
+  const [onFileWrite, setOnFileWrite] = useState<((path: string, content: string) => void) | null>(null);
 
   const sendMessage = useCallback(
     async (input: string) => {
@@ -160,6 +164,11 @@ export function useAIChat() {
             }
           }
         }
+
+        // After streaming is done, parse file blocks and write to sandbox
+        if (onFileWrite) {
+          parseAndWriteFiles(assistantContent, onFileWrite);
+        }
       } catch (e: any) {
         upsertAssistant(`\n\n⚠️ Error: ${e.message}`);
       } finally {
@@ -179,5 +188,22 @@ export function useAIChat() {
     userApiKeys,
     setUserApiKeys,
     sendMessage,
+    initialPromptSent,
+    setInitialPromptSent,
+    setOnFileWrite,
   };
+}
+
+/** Parse ```filename blocks from AI output and call writeFile for each */
+function parseAndWriteFiles(content: string, writeFile: (path: string, content: string) => void) {
+  // Match code blocks like: ```tsx:src/App.tsx or ```ts // src/App.tsx or ```filename.tsx
+  const regex = /```[\w]*(?::|\s+\/\/\s*)([\w/.\-]+)\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const filePath = match[1].trim();
+    const fileContent = match[2];
+    if (filePath && fileContent) {
+      writeFile(filePath, fileContent);
+    }
+  }
 }
