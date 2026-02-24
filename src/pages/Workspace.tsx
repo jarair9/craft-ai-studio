@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +45,39 @@ const Workspace = () => {
   const sandbox = useSandbox(id);
   const defaultTree = useMemo(() => buildDefaultTree(), []);
   const fileTree = sandbox.files.length > 0 ? sandbox.files : defaultTree;
+  const didInit = useRef(false);
+
+  // Wire up AI file writes → sandbox + local state
+  const handleAIFileWrite = useCallback(
+    (filePath: string, content: string) => {
+      // Save to local file contents for immediate code viewer display
+      setFileContents((prev) => ({ ...prev, [filePath]: content }));
+      // Also write to sandbox if active
+      if (sandbox.sandboxId) {
+        sandbox.writeFile(filePath, content);
+      }
+    },
+    [sandbox.sandboxId, sandbox.writeFile]
+  );
+
+  useEffect(() => {
+    chat.setOnFileWrite(() => handleAIFileWrite);
+  }, [handleAIFileWrite]);
+
+  // Auto-start sandbox + send initial prompt from project description
+  useEffect(() => {
+    if (didInit.current || !project) return;
+    didInit.current = true;
+
+    // Auto-create sandbox
+    sandbox.createSandbox().catch(() => {});
+
+    // Send the project description as the first chat message
+    if (project.description && !chat.initialPromptSent) {
+      chat.setInitialPromptSent(true);
+      chat.sendMessage(project.description);
+    }
+  }, [project]);
 
   const handleFileClick = async (path: string) => {
     setSelectedFilePath(path);
