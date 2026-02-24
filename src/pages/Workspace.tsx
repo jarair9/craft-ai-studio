@@ -3,7 +3,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, Zap, Settings, Eye, Code2, Terminal as TerminalIcon, Play, Square,
-  Share2, ChevronDown,
+  Share2,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,7 +15,7 @@ import { CodeViewer } from "@/components/workspace/CodeViewer";
 import { TerminalPanel } from "@/components/workspace/TerminalPanel";
 import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 import { ApiKeySettings } from "@/components/workspace/ApiKeySettings";
-import { useAIChat } from "@/hooks/useAIChat";
+import { useAIChat, type ParsedFile } from "@/hooks/useAIChat";
 import { useSandbox } from "@/hooks/useSandbox";
 import { cn } from "@/lib/utils";
 
@@ -47,22 +47,24 @@ const Workspace = () => {
   const fileTree = sandbox.files.length > 0 ? sandbox.files : defaultTree;
   const didInit = useRef(false);
 
-  // Wire up AI file writes → sandbox + local state
-  const handleAIFileWrite = useCallback(
-    (filePath: string, content: string) => {
-      // Save to local file contents for immediate code viewer display
-      setFileContents((prev) => ({ ...prev, [filePath]: content }));
-      // Also write to sandbox if active
-      if (sandbox.sandboxId) {
-        sandbox.writeFile(filePath, content);
-      }
-    },
-    [sandbox.sandboxId, sandbox.writeFile]
-  );
-
+  // Wire up AI file writes → sandbox + local state via ref
   useEffect(() => {
-    chat.setOnFileWrite(() => handleAIFileWrite);
-  }, [handleAIFileWrite]);
+    chat.fileWriteRef.current = (files: ParsedFile[]) => {
+      for (const f of files) {
+        // Store in local code viewer
+        setFileContents((prev) => ({ ...prev, [f.path]: f.content }));
+        // Write to sandbox if active
+        if (sandbox.sandboxId) {
+          sandbox.writeFile(f.path, f.content);
+        }
+      }
+      // Auto-select the first file in code view
+      if (files.length > 0) {
+        setSelectedFilePath(files[0].path);
+        setRightView("code");
+      }
+    };
+  }, [sandbox.sandboxId, sandbox.writeFile]);
 
   // Auto-start sandbox + send initial prompt from project description
   useEffect(() => {
@@ -103,7 +105,6 @@ const Workspace = () => {
     <div className="h-screen flex flex-col bg-[hsl(var(--background))]">
       {/* ── Top bar ── */}
       <header className="h-11 border-b border-border/40 flex items-center px-3 shrink-0 bg-[hsl(var(--sidebar-background))]">
-        {/* Left: logo + project name */}
         <div className="flex items-center gap-2 min-w-0">
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => navigate("/dashboard")}>
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -179,7 +180,6 @@ const Workspace = () => {
 
       {/* ── Main content ── */}
       <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
-        {/* LEFT: Chat panel (always visible) */}
         <ResizablePanel defaultSize={30} minSize={22} maxSize={45}>
           <ChatPanel
             messages={chat.messages}
@@ -194,10 +194,8 @@ const Workspace = () => {
 
         <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
 
-        {/* RIGHT: Preview / Code+Files / Terminal */}
         <ResizablePanel defaultSize={70} minSize={45}>
           {rightView === "preview" ? (
-            /* Preview mode — full right panel */
             <div className="h-full flex flex-col">
               <div className="flex-1">
                 <PreviewPanel
@@ -217,11 +215,9 @@ const Workspace = () => {
               )}
             </div>
           ) : (
-            /* Code mode — file list + editor + terminal */
             <div className="h-full flex flex-col">
               <div className="flex-1 min-h-0">
                 <ResizablePanelGroup direction="horizontal">
-                  {/* File list */}
                   <ResizablePanel defaultSize={28} minSize={18} maxSize={40}>
                     <FileExplorer
                       files={fileTree as any}
@@ -230,10 +226,7 @@ const Workspace = () => {
                       projectName={project?.name}
                     />
                   </ResizablePanel>
-
                   <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
-
-                  {/* Code editor */}
                   <ResizablePanel defaultSize={72} minSize={40}>
                     <CodeViewer
                       filePath={selectedFilePath}
@@ -242,8 +235,6 @@ const Workspace = () => {
                   </ResizablePanel>
                 </ResizablePanelGroup>
               </div>
-
-              {/* Terminal at bottom */}
               {showTerminal && (
                 <div className="h-[180px] shrink-0 border-t border-border/30">
                   <TerminalPanel
@@ -259,11 +250,13 @@ const Workspace = () => {
       </ResizablePanelGroup>
 
       {/* Settings modal */}
-      <ApiKeySettings
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        onKeysUpdate={chat.setUserApiKeys}
-      />
+      {showSettings && (
+        <ApiKeySettings
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          onKeysUpdate={chat.setUserApiKeys}
+        />
+      )}
     </div>
   );
 };

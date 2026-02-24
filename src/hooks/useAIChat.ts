@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 export interface ChatMessage {
   id: string;
@@ -66,6 +66,27 @@ const WELCOME_MSG: ChatMessage = {
   timestamp: new Date(),
 };
 
+export interface ParsedFile {
+  path: string;
+  content: string;
+}
+
+/** Parse ```lang:filepath code blocks from AI output */
+export function parseFileBlocks(content: string): ParsedFile[] {
+  const files: ParsedFile[] = [];
+  // Match: ```lang:path/to/file.ext\n...content...\n```
+  const regex = /```\w*:([\w/.@\-]+)\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const filePath = match[1].trim();
+    const fileContent = match[2];
+    if (filePath && fileContent) {
+      files.push({ path: filePath, content: fileContent });
+    }
+  }
+  return files;
+}
+
 export function useAIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MSG]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -74,8 +95,8 @@ export function useAIChat() {
   const [userApiKeys, setUserApiKeys] = useState<Record<string, string>>({});
   const [initialPromptSent, setInitialPromptSent] = useState(false);
 
-  // Callback to receive file writes from parsed AI output
-  const [onFileWrite, setOnFileWrite] = useState<((path: string, content: string) => void) | null>(null);
+  // Use a ref so the callback is always current inside sendMessage
+  const fileWriteRef = useRef<((files: ParsedFile[]) => void) | null>(null);
 
   const sendMessage = useCallback(
     async (input: string) => {
@@ -165,9 +186,10 @@ export function useAIChat() {
           }
         }
 
-        // After streaming is done, parse file blocks and write to sandbox
-        if (onFileWrite) {
-          parseAndWriteFiles(assistantContent, onFileWrite);
+        // After streaming completes, parse file blocks and dispatch
+        const parsedFiles = parseFileBlocks(assistantContent);
+        if (parsedFiles.length > 0 && fileWriteRef.current) {
+          fileWriteRef.current(parsedFiles);
         }
       } catch (e: any) {
         upsertAssistant(`\n\n⚠️ Error: ${e.message}`);
@@ -190,20 +212,6 @@ export function useAIChat() {
     sendMessage,
     initialPromptSent,
     setInitialPromptSent,
-    setOnFileWrite,
+    fileWriteRef,
   };
-}
-
-/** Parse ```filename blocks from AI output and call writeFile for each */
-function parseAndWriteFiles(content: string, writeFile: (path: string, content: string) => void) {
-  // Match code blocks like: ```tsx:src/App.tsx or ```ts // src/App.tsx or ```filename.tsx
-  const regex = /```[\w]*(?::|\s+\/\/\s*)([\w/.\-]+)\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(content)) !== null) {
-    const filePath = match[1].trim();
-    const fileContent = match[2];
-    if (filePath && fileContent) {
-      writeFile(filePath, fileContent);
-    }
-  }
 }

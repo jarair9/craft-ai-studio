@@ -23,6 +23,13 @@ export function useSandbox(projectId: string | undefined) {
   const [isCreating, setIsCreating] = useState(false);
   const [selectedFile, setSelectedFile] = useState<{ path: string; content: string } | null>(null);
 
+  const addTerminalLine = useCallback((type: TerminalLine["type"], content: string) => {
+    setTerminalLines((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), type, content, timestamp: new Date() },
+    ]);
+  }, []);
+
   const callSandbox = useCallback(async (body: Record<string, unknown>) => {
     const { data, error } = await supabase.functions.invoke("sandbox", { body });
     if (error) throw new Error(error.message);
@@ -31,20 +38,18 @@ export function useSandbox(projectId: string | undefined) {
   }, []);
 
   const createSandbox = useCallback(async () => {
+    if (isCreating) return;
     setIsCreating(true);
+    addTerminalLine("output", "Creating sandbox...");
     try {
       const data = await callSandbox({ action: "create" });
       const id = data.sandboxID || data.sandboxId || data.id;
-      const clientId = data.clientID || data.clientId;
       setSandboxId(id);
 
-      // Build preview URL — E2B format: https://{port}-{sandboxID}.e2b.dev
-      // Port 3000 is the default for most dev servers
       const previewPort = 3000;
       const url = `https://${previewPort}-${id}.e2b.dev`;
       setSandboxUrl(url);
 
-      // Update project with sandbox info
       if (projectId) {
         await supabase
           .from("projects")
@@ -53,6 +58,36 @@ export function useSandbox(projectId: string | undefined) {
       }
 
       addTerminalLine("output", `Sandbox created: ${id}`);
+
+      // Bootstrap a Vite + React project and start the dev server
+      addTerminalLine("output", "Bootstrapping Vite + React project...");
+      try {
+        await callSandbox({
+          action: "exec",
+          sandboxId: id,
+          cmd: "cd /home/user && npm create vite@latest app -- --template react-ts -y",
+          timeout: 60,
+        });
+        addTerminalLine("output", "Installing dependencies...");
+        await callSandbox({
+          action: "exec",
+          sandboxId: id,
+          cmd: "cd /home/user/app && npm install",
+          timeout: 120,
+        });
+        addTerminalLine("output", "Starting dev server on port 3000...");
+        // Start vite dev server in background (--host so it's accessible, --port 3000)
+        await callSandbox({
+          action: "exec",
+          sandboxId: id,
+          cmd: "cd /home/user/app && npx vite --host 0.0.0.0 --port 3000 &",
+          timeout: 10,
+        });
+        addTerminalLine("output", "✓ Dev server starting on port 3000");
+      } catch (bootstrapErr: any) {
+        addTerminalLine("error", `Bootstrap warning: ${bootstrapErr.message}`);
+      }
+
       return id;
     } catch (e: any) {
       addTerminalLine("error", `Failed to create sandbox: ${e.message}`);
@@ -60,7 +95,7 @@ export function useSandbox(projectId: string | undefined) {
     } finally {
       setIsCreating(false);
     }
-  }, [projectId, callSandbox]);
+  }, [projectId, callSandbox, isCreating, addTerminalLine]);
 
   const listFiles = useCallback(
     async (sbId?: string, dirPath = "/home/user") => {
@@ -80,7 +115,7 @@ export function useSandbox(projectId: string | undefined) {
         return [];
       }
     },
-    [sandboxId, callSandbox]
+    [sandboxId, callSandbox, addTerminalLine]
   );
 
   const readFile = useCallback(
@@ -94,7 +129,7 @@ export function useSandbox(projectId: string | undefined) {
         addTerminalLine("error", `cat ${filePath}: ${e.message}`);
       }
     },
-    [sandboxId, callSandbox]
+    [sandboxId, callSandbox, addTerminalLine]
   );
 
   const writeFile = useCallback(
@@ -107,7 +142,7 @@ export function useSandbox(projectId: string | undefined) {
         addTerminalLine("error", `Write failed: ${e.message}`);
       }
     },
-    [sandboxId, callSandbox]
+    [sandboxId, callSandbox, addTerminalLine]
   );
 
   const execCommand = useCallback(
@@ -123,7 +158,7 @@ export function useSandbox(projectId: string | undefined) {
         addTerminalLine("error", e.message);
       }
     },
-    [sandboxId, callSandbox]
+    [sandboxId, callSandbox, addTerminalLine]
   );
 
   const killSandbox = useCallback(async () => {
@@ -136,14 +171,7 @@ export function useSandbox(projectId: string | undefined) {
     } catch (e: any) {
       addTerminalLine("error", `Kill failed: ${e.message}`);
     }
-  }, [sandboxId, callSandbox]);
-
-  const addTerminalLine = (type: TerminalLine["type"], content: string) => {
-    setTerminalLines((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), type, content, timestamp: new Date() },
-    ]);
-  };
+  }, [sandboxId, callSandbox, addTerminalLine]);
 
   return {
     sandboxId,
