@@ -53,9 +53,10 @@ const Workspace = () => {
       for (const f of files) {
         // Store in local code viewer
         setFileContents((prev) => ({ ...prev, [f.path]: f.content }));
-        // Write to sandbox if active
+        // Write to sandbox if active — prefix with /home/user/app/ if relative
         if (sandbox.sandboxId) {
-          sandbox.writeFile(f.path, f.content);
+          const sandboxPath = f.path.startsWith("/") ? f.path : `/home/user/app/${f.path}`;
+          sandbox.writeFile(sandboxPath, f.content);
         }
       }
       // Auto-select the first file in code view
