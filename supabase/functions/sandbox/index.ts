@@ -1,33 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { Sandbox } from "npm:e2b@2.0.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-const E2B_API = "https://api.e2b.app";
-
-async function e2bFetch(path: string, opts: RequestInit = {}) {
-  const apiKey = Deno.env.get("E2B_API_KEY");
-  if (!apiKey) throw new Error("E2B_API_KEY is not configured");
-
-  const res = await fetch(`${E2B_API}${path}`, {
-    ...opts,
-    headers: {
-      "X-API-Key": apiKey,
-      "Content-Type": "application/json",
-      ...opts.headers,
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`E2B API error [${res.status}]: ${text}`);
-  }
-
-  return res.json();
-}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -36,75 +14,71 @@ serve(async (req) => {
 
   try {
     const { action, sandboxId, path, content, cmd, timeout } = await req.json();
+    const apiKey = Deno.env.get("E2B_API_KEY");
+    if (!apiKey) throw new Error("E2B_API_KEY is not configured");
 
     let result: unknown;
 
     switch (action) {
       case "create": {
-        result = await e2bFetch("/sandboxes", {
-          method: "POST",
-          body: JSON.stringify({
-            templateID: "base",
-            timeout: timeout || 300,
-          }),
+        const sandbox = await Sandbox.create("base", {
+          apiKey,
+          timeoutMs: (timeout || 300) * 1000,
         });
+        result = {
+          sandboxID: sandbox.sandboxId,
+          clientID: sandbox.sandboxId,
+        };
         break;
       }
 
       case "kill": {
         if (!sandboxId) throw new Error("sandboxId required");
-        await fetch(`${E2B_API}/sandboxes/${sandboxId}`, {
-          method: "DELETE",
-          headers: {
-            "X-API-Key": Deno.env.get("E2B_API_KEY")!,
-          },
-        });
+        await Sandbox.kill(sandboxId, { apiKey });
         result = { success: true };
         break;
       }
 
       case "exec": {
         if (!sandboxId || !cmd) throw new Error("sandboxId and cmd required");
-        result = await e2bFetch(`/sandboxes/${sandboxId}/commands`, {
-          method: "POST",
-          body: JSON.stringify({ cmd, timeout: timeout || 30 }),
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey });
+        const cmdResult = await sandbox.commands.run(cmd, {
+          timeoutMs: (timeout || 30) * 1000,
         });
+        result = {
+          stdout: cmdResult.stdout,
+          stderr: cmdResult.stderr,
+          exitCode: cmdResult.exitCode,
+        };
         break;
       }
 
       case "listFiles": {
         if (!sandboxId) throw new Error("sandboxId required");
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey });
         const dirPath = path || "/home/user";
-        result = await e2bFetch(`/sandboxes/${sandboxId}/filesystem?path=${encodeURIComponent(dirPath)}`);
+        const entries = await sandbox.files.list(dirPath);
+        result = entries.map((e: any) => ({
+          name: e.name,
+          path: e.path,
+          type: e.type,
+        }));
         break;
       }
 
       case "readFile": {
         if (!sandboxId || !path) throw new Error("sandboxId and path required");
-        const apiKey = Deno.env.get("E2B_API_KEY")!;
-        const res = await fetch(
-          `${E2B_API}/sandboxes/${sandboxId}/filesystem/files?path=${encodeURIComponent(path)}`,
-          { headers: { "X-API-Key": apiKey } }
-        );
-        if (!res.ok) throw new Error(`Read file error: ${res.status}`);
-        const text = await res.text();
-        result = { content: text };
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey });
+        const fileContent = await sandbox.files.read(path);
+        result = { content: fileContent };
         break;
       }
 
       case "writeFile": {
         if (!sandboxId || !path || content === undefined)
           throw new Error("sandboxId, path, and content required");
-        const apiKey2 = Deno.env.get("E2B_API_KEY")!;
-        const writeRes = await fetch(
-          `${E2B_API}/sandboxes/${sandboxId}/filesystem/files?path=${encodeURIComponent(path)}`,
-          {
-            method: "POST",
-            headers: { "X-API-Key": apiKey2, "Content-Type": "application/octet-stream" },
-            body: content,
-          }
-        );
-        if (!writeRes.ok) throw new Error(`Write file error: ${writeRes.status}`);
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey });
+        await sandbox.files.write(path, content);
         result = { success: true };
         break;
       }
