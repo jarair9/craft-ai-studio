@@ -47,20 +47,28 @@ const Workspace = () => {
 
   // Wire up AI file writes → StackBlitz + local state
   useEffect(() => {
-    chat.fileWriteRef.current = async (files: ParsedFile[]) => {
+    chat.fileWriteRef.current = async (files: ParsedFile[], deps: string[]) => {
       setBuildComplete(false);
 
+      // Install dependencies first if any
+      if (deps.length > 0 && stackblitz.isReady) {
+        setWritingFiles(["Installing packages..."]);
+        await stackblitz.installDeps(deps);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
       // Show writing indicators sequentially
-      const fileNames = files.map((f) => f.path);
       for (const f of files) {
-        setWritingFiles((prev) => [...prev, f.path]);
+        setWritingFiles((prev) => {
+          const filtered = prev.filter((p) => p !== "Installing packages...");
+          return [...filtered, f.path];
+        });
         setFileContents((prev) => ({ ...prev, [f.path]: f.content }));
-        // Small stagger delay for visual effect
         await new Promise((r) => setTimeout(r, 300));
       }
 
       // Write all files to StackBlitz at once
-      if (stackblitz.isReady) {
+      if (stackblitz.isReady && files.length > 0) {
         await stackblitz.writeFiles(files.map((f) => ({ path: f.path, content: f.content })));
       }
 
@@ -76,9 +84,7 @@ const Workspace = () => {
         setTimeout(() => setBuildComplete(false), 4000);
       }, 600);
     };
-  }, [stackblitz.isReady, stackblitz.writeFiles]);
-
-  // Auto-boot StackBlitz handled via PreviewPanel onContainerReady
+  }, [stackblitz.isReady, stackblitz.writeFiles, stackblitz.installDeps]);
 
   // Send initial prompt from project description
   useEffect(() => {

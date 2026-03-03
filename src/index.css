@@ -120,3 +120,23 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* Hide all StackBlitz branding and chrome */
+.stackblitz-embed iframe {
+  border: 0 !important;
+}
+
+.stackblitz-embed > div:first-child,
+.stackblitz-embed [class*="MenuBar"],
+.stackblitz-embed [class*="header"],
+.stackblitz-embed [class*="Header"],
+.stackblitz-embed [class*="navigation"],
+.stackblitz-embed [class*="Navigation"],
+.stackblitz-embed [class*="toolbar"],
+.stackblitz-embed [class*="Toolbar"],
+.stackblitz-embed [class*="statusbar"],
+.stackblitz-embed [class*="StatusBar"] {
+  display: none !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}

@@ -90,10 +90,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   ),
 };
 
+const BASE_DEPS: Record<string, string> = {
+  react: "^18.3.1",
+  "react-dom": "^18.3.1",
+  "lucide-react": "^0.462.0",
+};
+
 export function useStackBlitz() {
   const vmRef = useRef<VM | null>(null);
   const [isBooting, setIsBooting] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const installedDeps = useRef<Set<string>>(new Set(Object.keys(BASE_DEPS)));
 
   const boot = useCallback(
     async (container: HTMLElement) => {
@@ -125,6 +132,35 @@ export function useStackBlitz() {
     [isBooting]
   );
 
+  /** Install new npm deps by merging into package.json */
+  const installDeps = useCallback(async (deps: string[]) => {
+    if (!vmRef.current || deps.length === 0) return;
+    const newDeps = deps.filter((d) => !installedDeps.current.has(d));
+    if (newDeps.length === 0) return;
+
+    try {
+      // Read current package.json
+      const files = await vmRef.current.getFsSnapshot();
+      const pkgStr = files?.["package.json"];
+      if (!pkgStr) return;
+
+      const pkg = JSON.parse(pkgStr);
+      if (!pkg.dependencies) pkg.dependencies = {};
+      for (const dep of newDeps) {
+        pkg.dependencies[dep] = "latest";
+        installedDeps.current.add(dep);
+      }
+
+      // Write updated package.json — StackBlitz auto-installs
+      await vmRef.current.applyFsDiff({
+        create: { "package.json": JSON.stringify(pkg, null, 2) },
+        destroy: [],
+      });
+    } catch (e) {
+      console.error("Failed to install deps:", e);
+    }
+  }, []);
+
   const writeFiles = useCallback(
     async (files: { path: string; content: string }[]) => {
       if (!vmRef.current) return;
@@ -137,5 +173,5 @@ export function useStackBlitz() {
     []
   );
 
-  return { isBooting, isReady, boot, writeFiles, vmRef };
+  return { isBooting, isReady, boot, writeFiles, installDeps, vmRef };
 }
