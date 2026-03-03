@@ -75,16 +75,31 @@ export interface ParsedFile {
 export function parseFileBlocks(content: string): ParsedFile[] {
   const files: ParsedFile[] = [];
   // Match: ```lang:path/to/file.ext\n...content...\n```
-  const regex = /```\w*:([\w/.@\-]+)\n([\s\S]*?)```/g;
+  // Also handle ```lang:path (with optional spaces)
+  const regex = /```[\w]*:([\w/.@\-]+)\s*\n([\s\S]*?)```/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(content)) !== null) {
-    const filePath = match[1].trim();
+    let filePath = match[1].trim();
     const fileContent = match[2];
+    // Strip any absolute prefix the AI might add
+    filePath = filePath.replace(/^\/?(home\/user\/app\/)?/, "");
     if (filePath && fileContent) {
       files.push({ path: filePath, content: fileContent });
     }
   }
   return files;
+}
+
+/** Parse ```deps blocks for npm dependencies */
+export function parseDepsBlock(content: string): string[] {
+  const deps: string[] = [];
+  const regex = /```deps\s*\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    const lines = match[1].split("\n").map((l) => l.trim()).filter(Boolean);
+    deps.push(...lines);
+  }
+  return deps;
 }
 
 export function useAIChat() {
@@ -95,8 +110,7 @@ export function useAIChat() {
   const [userApiKeys, setUserApiKeys] = useState<Record<string, string>>({});
   const [initialPromptSent, setInitialPromptSent] = useState(false);
 
-  // Use a ref so the callback is always current inside sendMessage
-  const fileWriteRef = useRef<((files: ParsedFile[]) => void) | null>(null);
+  const fileWriteRef = useRef<((files: ParsedFile[], deps: string[]) => void) | null>(null);
 
   const sendMessage = useCallback(
     async (input: string) => {
@@ -186,10 +200,11 @@ export function useAIChat() {
           }
         }
 
-        // After streaming completes, parse file blocks and dispatch
+        // After streaming, parse files and deps then dispatch
         const parsedFiles = parseFileBlocks(assistantContent);
-        if (parsedFiles.length > 0 && fileWriteRef.current) {
-          fileWriteRef.current(parsedFiles);
+        const parsedDeps = parseDepsBlock(assistantContent);
+        if ((parsedFiles.length > 0 || parsedDeps.length > 0) && fileWriteRef.current) {
+          fileWriteRef.current(parsedFiles, parsedDeps);
         }
       } catch (e: any) {
         upsertAssistant(`\n\n⚠️ Error: ${e.message}`);
