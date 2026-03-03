@@ -65,7 +65,7 @@ export function useSandbox(projectId: string | undefined) {
         await callSandbox({
           action: "exec",
           sandboxId: id,
-          cmd: "cd /home/user && npm create vite@latest app -- --template react-ts -y",
+          cmd: "cd /home/user && npm create vite@5 app -- --template react-ts -y",
           timeout: 60,
         });
         addTerminalLine("output", "Installing dependencies...");
@@ -77,11 +77,19 @@ export function useSandbox(projectId: string | undefined) {
         });
         addTerminalLine("output", "Starting dev server on port 3000...");
         // Start vite dev server in background (--host so it's accessible, --port 3000)
+        // Install tailwindcss and lucide-react for AI-generated code
         await callSandbox({
           action: "exec",
           sandboxId: id,
-          cmd: "cd /home/user/app && npx vite --host 0.0.0.0 --port 3000 &",
-          timeout: 10,
+          cmd: "cd /home/user/app && npm install tailwindcss @tailwindcss/vite lucide-react",
+          timeout: 60,
+        });
+        // Start vite dev server in background
+        await callSandbox({
+          action: "exec",
+          sandboxId: id,
+          cmd: "cd /home/user/app && nohup npx vite --host 0.0.0.0 --port 3000 > /dev/null 2>&1 &",
+          timeout: 5,
         });
         addTerminalLine("output", "✓ Dev server starting on port 3000");
       } catch (bootstrapErr: any) {
