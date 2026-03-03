@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Bot, User, Send, Loader2, Plus, Sparkles, Bookmark } from "lucide-react";
+import { Bot, User, Send, Sparkles, FileCode, Check, Bookmark, Plus } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { ModelSelector } from "./ModelSelector";
 import type { ChatMessage } from "@/hooks/useAIChat";
@@ -16,6 +16,8 @@ interface ChatPanelProps {
   onProviderChange: (v: string) => void;
   onModelChange: (v: string) => void;
   onSend: (msg: string) => void;
+  writingFiles: string[];
+  buildComplete: boolean;
 }
 
 export function ChatPanel({
@@ -26,13 +28,15 @@ export function ChatPanel({
   onProviderChange,
   onModelChange,
   onSend,
+  writingFiles,
+  buildComplete,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  }, [messages, writingFiles]);
 
   const handleSend = () => {
     if (!input.trim() || isStreaming) return;
@@ -63,7 +67,7 @@ export function ChatPanel({
               key={msg.id}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex gap-2.5 ${msg.role === "user" ? "" : ""}`}
+              className="flex gap-2.5"
             >
               <div
                 className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
@@ -85,6 +89,8 @@ export function ChatPanel({
               </div>
             </motion.div>
           ))}
+
+          {/* Streaming indicator */}
           {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2.5">
               <div className="h-6 w-6 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
@@ -97,10 +103,58 @@ export function ChatPanel({
               </div>
             </motion.div>
           )}
+
+          {/* File writing indicators */}
+          <AnimatePresence>
+            {writingFiles.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="space-y-1.5"
+              >
+                {writingFiles.map((file) => (
+                  <div
+                    key={file}
+                    className="relative overflow-hidden rounded-lg bg-primary/5 border border-primary/15 px-3 py-2"
+                  >
+                    {/* Shimmer sweep */}
+                    <div className="absolute inset-0 animate-shimmer" />
+                    <div className="relative flex items-center gap-2">
+                      <FileCode className="h-3.5 w-3.5 text-primary animate-pulse" />
+                      <span className="text-[12px] font-mono text-foreground/70">
+                        Writing{" "}
+                        <span className="text-primary font-medium">{file}</span>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Build complete indicator */}
+          <AnimatePresence>
+            {buildComplete && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                className="rounded-lg bg-primary/8 border border-primary/20 px-3 py-2.5 flex items-center gap-2"
+              >
+                <div className="h-5 w-5 rounded-full bg-primary/15 flex items-center justify-center">
+                  <Check className="h-3 w-3 text-primary" />
+                </div>
+                <span className="text-[12px] font-medium text-primary/90">
+                  Build complete — preview updated
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </ScrollArea>
 
-      {/* Version bookmark (like Bolt's "Build complete AI..." card) */}
+      {/* Version bookmark */}
       {messages.length > 0 && (
         <div className="mx-3 mb-2 rounded-lg bg-secondary/40 border border-border/30 px-3 py-2 flex items-center justify-between">
           <div>
@@ -123,11 +177,10 @@ export function ChatPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="How can I help you today? (or /command)"
+            placeholder="How can I help you today?"
             className="min-h-[60px] max-h-[120px] resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-[13px] rounded-none"
             rows={2}
           />
-          {/* Bottom toolbar */}
           <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/20">
             <div className="flex items-center gap-2">
               <button className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-secondary/50 transition-colors">

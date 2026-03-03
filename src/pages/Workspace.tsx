@@ -1,9 +1,8 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, Zap, Settings, Eye, Code2, Terminal as TerminalIcon, Play, Square,
-  Share2,
+  ArrowLeft, Zap, Settings, Eye, Code2, Share2,
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,11 +11,10 @@ import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "@/components/workspace/ChatPanel";
 import { FileExplorer, buildDefaultTree } from "@/components/workspace/FileExplorer";
 import { CodeViewer } from "@/components/workspace/CodeViewer";
-import { TerminalPanel } from "@/components/workspace/TerminalPanel";
 import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 import { ApiKeySettings } from "@/components/workspace/ApiKeySettings";
 import { useAIChat, type ParsedFile } from "@/hooks/useAIChat";
-import { useSandbox } from "@/hooks/useSandbox";
+import { useStackBlitz } from "@/hooks/useStackBlitz";
 import { cn } from "@/lib/utils";
 
 type RightView = "preview" | "code";
@@ -27,9 +25,10 @@ const Workspace = () => {
   const { user } = useAuth();
   const [rightView, setRightView] = useState<RightView>("preview");
   const [showSettings, setShowSettings] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(true);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
+  const [writingFiles, setWritingFiles] = useState<string[]>([]);
+  const [buildComplete, setBuildComplete] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ["project", id],
@@ -42,60 +41,72 @@ const Workspace = () => {
   });
 
   const chat = useAIChat();
-  const sandbox = useSandbox(id);
+  const stackblitz = useStackBlitz();
   const defaultTree = useMemo(() => buildDefaultTree(), []);
-  const fileTree = sandbox.files.length > 0 ? sandbox.files : defaultTree;
   const didInit = useRef(false);
 
-  // Wire up AI file writes → sandbox + local state via ref
+  // Wire up AI file writes → StackBlitz + local state
   useEffect(() => {
-    chat.fileWriteRef.current = (files: ParsedFile[]) => {
+    chat.fileWriteRef.current = async (files: ParsedFile[]) => {
+      setBuildComplete(false);
+
+      // Show writing indicators sequentially
+      const fileNames = files.map((f) => f.path);
       for (const f of files) {
-        // Store in local code viewer
+        setWritingFiles((prev) => [...prev, f.path]);
         setFileContents((prev) => ({ ...prev, [f.path]: f.content }));
-        // Write to sandbox if active — prefix with /home/user/app/ if relative
-        if (sandbox.sandboxId) {
-          const sandboxPath = f.path.startsWith("/") ? f.path : `/home/user/app/${f.path}`;
-          sandbox.writeFile(sandboxPath, f.content);
-        }
+        // Small stagger delay for visual effect
+        await new Promise((r) => setTimeout(r, 300));
       }
-      // Auto-select the first file in code view
+
+      // Write all files to StackBlitz at once
+      if (stackblitz.isReady) {
+        await stackblitz.writeFiles(files.map((f) => ({ path: f.path, content: f.content })));
+      }
+
+      // Auto-select first file in code view
       if (files.length > 0) {
         setSelectedFilePath(files[0].path);
-        setRightView("code");
       }
-    };
-  }, [sandbox.sandboxId, sandbox.writeFile]);
 
-  // Auto-start sandbox + send initial prompt from project description
+      // Clear writing indicators, show build complete
+      setTimeout(() => {
+        setWritingFiles([]);
+        setBuildComplete(true);
+        setTimeout(() => setBuildComplete(false), 4000);
+      }, 600);
+    };
+  }, [stackblitz.isReady, stackblitz.writeFiles]);
+
+  // Auto-boot StackBlitz handled via PreviewPanel onContainerReady
+
+  // Send initial prompt from project description
   useEffect(() => {
     if (didInit.current || !project) return;
     didInit.current = true;
 
-    // Auto-create sandbox
-    sandbox.createSandbox().catch(() => {});
-
-    // Send the project description as the first chat message
     if (project.description && !chat.initialPromptSent) {
       chat.setInitialPromptSent(true);
       chat.sendMessage(project.description);
     }
   }, [project]);
 
-  const handleFileClick = async (path: string) => {
+  const handleContainerReady = useCallback(
+    (el: HTMLElement) => {
+      stackblitz.boot(el);
+    },
+    [stackblitz.boot]
+  );
+
+  const handleFileClick = (path: string) => {
     setSelectedFilePath(path);
     setRightView("code");
 
-    if (sandbox.sandboxId) {
-      const content = await sandbox.readFile(path);
-      if (content) {
-        setFileContents((prev) => ({ ...prev, [path]: content }));
-      }
-    } else if (!fileContents[path]) {
+    if (!fileContents[path]) {
       const fileName = path.split("/").pop() || "";
       setFileContents((prev) => ({
         ...prev,
-        [path]: `// ${fileName}\n// File content will appear here when sandbox is active\n`,
+        [path]: `// ${fileName}\n// File content will appear after code generation\n`,
       }));
     }
   };
@@ -144,16 +155,6 @@ const Workspace = () => {
             <Code2 className="h-4 w-4" />
           </button>
           <button
-            onClick={() => setShowTerminal(!showTerminal)}
-            className={cn(
-              "p-1.5 rounded-md transition-all",
-              showTerminal ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-            title="Terminal"
-          >
-            <TerminalIcon className="h-4 w-4" />
-          </button>
-          <button
             onClick={() => setShowSettings(true)}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-all"
             title="Settings"
@@ -164,15 +165,6 @@ const Workspace = () => {
 
         {/* Right: actions */}
         <div className="ml-auto flex items-center gap-2">
-          {sandbox.sandboxId ? (
-            <Button variant="ghost" size="sm" className="h-7 text-[11px] gap-1.5 text-destructive hover:text-destructive" onClick={sandbox.killSandbox}>
-              <Square className="h-3 w-3" /> Stop
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" className="h-7 text-[11px] gap-1.5" onClick={sandbox.createSandbox} disabled={sandbox.isCreating}>
-              <Play className="h-3 w-3" /> {sandbox.isCreating ? "Starting..." : "Run"}
-            </Button>
-          )}
           <Button variant="default" size="sm" className="h-7 text-[11px] gap-1.5 font-medium">
             <Share2 className="h-3 w-3" /> Share
           </Button>
@@ -190,63 +182,55 @@ const Workspace = () => {
             onProviderChange={chat.setProvider}
             onModelChange={chat.setModel}
             onSend={chat.sendMessage}
+            writingFiles={writingFiles}
+            buildComplete={buildComplete}
           />
         </ResizablePanel>
 
         <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
 
         <ResizablePanel defaultSize={70} minSize={45}>
-          {rightView === "preview" ? (
-            <div className="h-full flex flex-col">
-              <div className="flex-1">
-                <PreviewPanel
-                  sandboxUrl={sandbox.sandboxUrl}
-                  isCreating={sandbox.isCreating}
-                  onCreateSandbox={sandbox.createSandbox}
-                />
-              </div>
-              {showTerminal && (
-                <div className="h-[180px] shrink-0 border-t border-border/30">
-                  <TerminalPanel
-                    lines={sandbox.terminalLines}
-                    onCommand={sandbox.execCommand}
-                    isDisabled={!sandbox.sandboxId}
-                  />
-                </div>
+          <div className="h-full relative overflow-hidden">
+            {/* Preview — always mounted to preserve StackBlitz iframe */}
+            <div
+              className={cn(
+                "absolute inset-0 transition-opacity duration-200",
+                rightView === "preview" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
               )}
+            >
+              <PreviewPanel
+                isBooting={stackblitz.isBooting}
+                isReady={stackblitz.isReady}
+                onContainerReady={handleContainerReady}
+              />
             </div>
-          ) : (
-            <div className="h-full flex flex-col">
-              <div className="flex-1 min-h-0">
-                <ResizablePanelGroup direction="horizontal">
-                  <ResizablePanel defaultSize={28} minSize={18} maxSize={40}>
-                    <FileExplorer
-                      files={fileTree as any}
-                      selectedPath={selectedFilePath}
-                      onFileClick={handleFileClick}
-                      projectName={project?.name}
-                    />
-                  </ResizablePanel>
-                  <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
-                  <ResizablePanel defaultSize={72} minSize={40}>
-                    <CodeViewer
-                      filePath={selectedFilePath}
-                      content={currentContent}
-                    />
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              </div>
-              {showTerminal && (
-                <div className="h-[180px] shrink-0 border-t border-border/30">
-                  <TerminalPanel
-                    lines={sandbox.terminalLines}
-                    onCommand={sandbox.execCommand}
-                    isDisabled={!sandbox.sandboxId}
-                  />
-                </div>
+
+            {/* Code view */}
+            <div
+              className={cn(
+                "absolute inset-0 transition-opacity duration-200",
+                rightView === "code" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
               )}
+            >
+              <ResizablePanelGroup direction="horizontal">
+                <ResizablePanel defaultSize={28} minSize={18} maxSize={40}>
+                  <FileExplorer
+                    files={defaultTree as any}
+                    selectedPath={selectedFilePath}
+                    onFileClick={handleFileClick}
+                    projectName={project?.name}
+                  />
+                </ResizablePanel>
+                <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
+                <ResizablePanel defaultSize={72} minSize={40}>
+                  <CodeViewer
+                    filePath={selectedFilePath}
+                    content={currentContent}
+                  />
+                </ResizablePanel>
+              </ResizablePanelGroup>
             </div>
-          )}
+          </div>
         </ResizablePanel>
       </ResizablePanelGroup>
 
