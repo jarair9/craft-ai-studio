@@ -1,56 +1,49 @@
-import { Eye, Loader2, HelpCircle, Users, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useRef } from "react";
+import { Loader2, Zap } from "lucide-react";
+
 interface PreviewPanelProps {
-  sandboxUrl: string | null;
-  isCreating: boolean;
-  onCreateSandbox: () => void;
+  isBooting: boolean;
+  isReady: boolean;
+  onContainerReady: (el: HTMLElement) => void;
 }
 
-export function PreviewPanel({ sandboxUrl, isCreating, onCreateSandbox }: PreviewPanelProps) {
-  if (!sandboxUrl) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center bg-[hsl(var(--background))] relative">
-        {/* Centered placeholder */}
-        <div className="text-center space-y-4">
-          {/* Large logo-ish icon */}
-          <div className="mx-auto">
-            <Zap className="h-16 w-16 text-muted-foreground/15" />
-          </div>
-          <p className="text-sm text-muted-foreground/40">
-            {isCreating ? "Starting sandbox..." : "Your preview will appear here"}
-          </p>
-          {isCreating && (
-            <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" />
-          )}
-          {!isCreating && (
-            <Button size="sm" variant="outline" onClick={onCreateSandbox} className="mt-2">
-              Start Sandbox
-            </Button>
-          )}
-        </div>
+export function PreviewPanel({ isBooting, isReady, onContainerReady }: PreviewPanelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const didBoot = useRef(false);
 
-        {/* Bottom links like Bolt */}
-        <div className="absolute bottom-4 flex items-center gap-5 text-[12px]">
-          <a href="#" className="flex items-center gap-1.5 text-primary/70 hover:text-primary transition-colors">
-            <HelpCircle className="h-3.5 w-3.5" /> Help Center
-          </a>
-          <a href="#" className="flex items-center gap-1.5 text-primary/70 hover:text-primary transition-colors">
-            <Users className="h-3.5 w-3.5" /> Community
-          </a>
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (containerRef.current && !didBoot.current) {
+      didBoot.current = true;
+      onContainerReady(containerRef.current);
+    }
+  }, [onContainerReady]);
 
   return (
-    <div className="h-full flex flex-col bg-[hsl(var(--background))]">
-      <iframe
-        src={sandboxUrl}
-        className="flex-1 w-full border-0 bg-white"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        title="Sandbox Preview"
+    <div className="h-full flex flex-col bg-[hsl(var(--background))] relative">
+      {/* StackBlitz container */}
+      <div
+        ref={containerRef}
+        className="flex-1 w-full [&>iframe]:!border-0"
+        style={{ display: isReady || isBooting ? "block" : "block" }}
       />
+
+      {/* Loading overlay */}
+      {!isReady && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[hsl(var(--background))] z-10">
+          <div className="text-center space-y-4">
+            <Zap className="h-16 w-16 text-muted-foreground/15 mx-auto" />
+            <p className="text-sm text-muted-foreground/40">
+              {isBooting ? "Setting up environment..." : "Your preview will appear here"}
+            </p>
+            {isBooting && (
+              <div className="flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-xs text-muted-foreground/50">Installing dependencies...</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
