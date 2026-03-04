@@ -4,19 +4,14 @@ import {
   File,
   Folder,
   Search,
+  FolderOpen,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-
-export interface TreeNode {
-  name: string;
-  path: string;
-  type: "file" | "dir";
-  children?: TreeNode[];
-}
+import { buildTreeFromPaths, type FileTreeNode } from "@/lib/actionParser";
 
 interface FileExplorerProps {
-  files: TreeNode[];
+  filePaths: string[];
   selectedPath: string | null;
   onFileClick: (path: string) => void;
   projectName?: string;
@@ -29,7 +24,7 @@ function FileItem({
   onFileClick,
   defaultExpanded = false,
 }: {
-  node: TreeNode;
+  node: FileTreeNode;
   depth: number;
   selectedPath: string | null;
   onFileClick: (path: string) => void;
@@ -46,6 +41,19 @@ function FileItem({
       onFileClick(node.path);
     }
   };
+
+  // Color-code by file extension
+  const ext = node.name.split(".").pop()?.toLowerCase();
+  const iconColor =
+    ext === "tsx" || ext === "jsx"
+      ? "text-blue-400/70"
+      : ext === "ts" || ext === "js"
+        ? "text-yellow-400/70"
+        : ext === "css"
+          ? "text-purple-400/70"
+          : ext === "json"
+            ? "text-green-400/70"
+            : "text-muted-foreground/50";
 
   return (
     <>
@@ -66,12 +74,16 @@ function FileItem({
                 expanded && "rotate-90"
               )}
             />
-            <Folder className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+            {expanded ? (
+              <FolderOpen className="h-4 w-4 shrink-0 text-amber-400/70" />
+            ) : (
+              <Folder className="h-4 w-4 shrink-0 text-amber-400/70" />
+            )}
           </>
         ) : (
           <>
             <span className="w-3.5 shrink-0" />
-            <File className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+            <File className={cn("h-4 w-4 shrink-0", iconColor)} />
           </>
         )}
         <span className="truncate">{node.name}</span>
@@ -92,115 +104,44 @@ function FileItem({
   );
 }
 
-/** Build a default project file tree */
-export function buildDefaultTree(): TreeNode[] {
-  return [
-    {
-      name: "src",
-      path: "/src",
-      type: "dir",
-      children: [
-        {
-          name: "components",
-          path: "/src/components",
-          type: "dir",
-          children: [
-            { name: "Navbar.tsx", path: "/src/components/Navbar.tsx", type: "file" },
-            { name: "HeroSection.tsx", path: "/src/components/HeroSection.tsx", type: "file" },
-            { name: "Footer.tsx", path: "/src/components/Footer.tsx", type: "file" },
-            { name: "TemplatesGrid.tsx", path: "/src/components/TemplatesGrid.tsx", type: "file" },
-            { name: "FeaturesSection.tsx", path: "/src/components/FeaturesSection.tsx", type: "file" },
-            { name: "PricingSection.tsx", path: "/src/components/PricingSection.tsx", type: "file" },
-          ],
-        },
-        {
-          name: "hooks",
-          path: "/src/hooks",
-          type: "dir",
-          children: [
-            { name: "useAIChat.ts", path: "/src/hooks/useAIChat.ts", type: "file" },
-            { name: "useAuth.tsx", path: "/src/hooks/useAuth.tsx", type: "file" },
-            { name: "useSandbox.ts", path: "/src/hooks/useSandbox.ts", type: "file" },
-          ],
-        },
-        {
-          name: "pages",
-          path: "/src/pages",
-          type: "dir",
-          children: [
-            { name: "Index.tsx", path: "/src/pages/Index.tsx", type: "file" },
-            { name: "Dashboard.tsx", path: "/src/pages/Dashboard.tsx", type: "file" },
-            { name: "Workspace.tsx", path: "/src/pages/Workspace.tsx", type: "file" },
-            { name: "Auth.tsx", path: "/src/pages/Auth.tsx", type: "file" },
-          ],
-        },
-        { name: "App.tsx", path: "/src/App.tsx", type: "file" },
-        { name: "App.css", path: "/src/App.css", type: "file" },
-        { name: "index.css", path: "/src/index.css", type: "file" },
-        { name: "main.tsx", path: "/src/main.tsx", type: "file" },
-      ],
-    },
-    {
-      name: "supabase",
-      path: "/supabase",
-      type: "dir",
-      children: [
-        {
-          name: "functions",
-          path: "/supabase/functions",
-          type: "dir",
-          children: [
-            { name: "ai-chat", path: "/supabase/functions/ai-chat", type: "dir", children: [
-              { name: "index.ts", path: "/supabase/functions/ai-chat/index.ts", type: "file" },
-            ]},
-            { name: "sandbox", path: "/supabase/functions/sandbox", type: "dir", children: [
-              { name: "index.ts", path: "/supabase/functions/sandbox/index.ts", type: "file" },
-            ]},
-          ],
-        },
-      ],
-    },
-    { name: ".env", path: "/.env", type: "file" },
-    { name: ".gitignore", path: "/.gitignore", type: "file" },
-    { name: "eslint.config.js", path: "/eslint.config.js", type: "file" },
-    { name: "index.html", path: "/index.html", type: "file" },
-    { name: "package.json", path: "/package.json", type: "file" },
-    { name: "postcss.config.js", path: "/postcss.config.js", type: "file" },
-    { name: "README.md", path: "/README.md", type: "file" },
-    { name: "tailwind.config.ts", path: "/tailwind.config.ts", type: "file" },
-    { name: "tsconfig.json", path: "/tsconfig.json", type: "file" },
-    { name: "vite.config.ts", path: "/vite.config.ts", type: "file" },
-  ];
-}
-
-export function FileExplorer({ files, selectedPath, onFileClick, projectName }: FileExplorerProps) {
+export function FileExplorer({ filePaths, selectedPath, onFileClick, projectName }: FileExplorerProps) {
   const [activeTab, setActiveTab] = useState<"files" | "search">("files");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Flatten files for search
-  const flattenFiles = (nodes: TreeNode[]): TreeNode[] => {
-    const result: TreeNode[] = [];
-    for (const node of nodes) {
-      if (node.type === "file") result.push(node);
-      if (node.children) result.push(...flattenFiles(node.children));
-    }
-    return result;
-  };
+  const tree = buildTreeFromPaths(filePaths);
+
+  // Flatten for search
+  const flatFiles = filePaths.map((p) => ({
+    name: p.split("/").pop() || p,
+    path: p,
+  }));
 
   const filteredFiles = searchQuery
-    ? flattenFiles(files).filter((f) =>
-        f.name.toLowerCase().includes(searchQuery.toLowerCase())
+    ? flatFiles.filter((f) =>
+        f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        f.path.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
 
   return (
     <div className="h-full flex flex-col bg-[hsl(var(--sidebar-background))] border-r border-border/20">
-      {/* Tabs: Files | Search */}
+      {/* Header */}
+      <div className="px-3 py-2.5 border-b border-border/30 flex items-center gap-2">
+        <Folder className="h-4 w-4 text-amber-400/70" />
+        <span className="text-[12px] font-medium text-foreground/70 uppercase tracking-wider">
+          {projectName || "Explorer"}
+        </span>
+        <span className="ml-auto text-[10px] text-muted-foreground/30">
+          {filePaths.length} files
+        </span>
+      </div>
+
+      {/* Tabs */}
       <div className="flex items-center border-b border-border/30">
         <button
           onClick={() => setActiveTab("files")}
           className={cn(
-            "flex-1 py-2.5 text-[13px] font-medium text-center transition-colors border-b-2",
+            "flex-1 py-2 text-[12px] font-medium text-center transition-colors border-b-2",
             activeTab === "files"
               ? "border-primary text-foreground"
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -211,7 +152,7 @@ export function FileExplorer({ files, selectedPath, onFileClick, projectName }: 
         <button
           onClick={() => setActiveTab("search")}
           className={cn(
-            "flex-1 py-2.5 text-[13px] font-medium text-center transition-colors border-b-2",
+            "flex-1 py-2 text-[12px] font-medium text-center transition-colors border-b-2",
             activeTab === "search"
               ? "border-primary text-foreground"
               : "border-transparent text-muted-foreground hover:text-foreground"
@@ -239,16 +180,28 @@ export function FileExplorer({ files, selectedPath, onFileClick, projectName }: 
       <ScrollArea className="flex-1">
         <div className="py-1">
           {activeTab === "files" ? (
-            files.map((f) => (
-              <FileItem
-                key={f.path}
-                node={f}
-                depth={0}
-                selectedPath={selectedPath}
-                onFileClick={onFileClick}
-                defaultExpanded={f.name === "src"}
-              />
-            ))
+            tree.length > 0 ? (
+              tree.map((f) => (
+                <FileItem
+                  key={f.path}
+                  node={f}
+                  depth={0}
+                  selectedPath={selectedPath}
+                  onFileClick={onFileClick}
+                  defaultExpanded={f.name === "src"}
+                />
+              ))
+            ) : (
+              <div className="text-center py-12 space-y-2">
+                <File className="h-8 w-8 mx-auto text-muted-foreground/20" />
+                <p className="text-[12px] text-muted-foreground/40">
+                  No files yet
+                </p>
+                <p className="text-[11px] text-muted-foreground/30">
+                  Ask the AI to build something
+                </p>
+              </div>
+            )
           ) : searchQuery ? (
             filteredFiles.length > 0 ? (
               filteredFiles.map((f) => (

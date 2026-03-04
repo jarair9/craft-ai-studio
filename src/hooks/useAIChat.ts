@@ -62,7 +62,7 @@ const WELCOME_MSG: ChatMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "Hey! I'm your AI coding agent. Describe what you'd like to build and I'll generate the code, set up the sandbox, and help you ship. What are we building today?",
+    "Hey! I'm **ForgeAI**, your coding agent. I'll analyze your request, plan the architecture, write the code, and deploy it to the preview — all step by step.\n\nWhat are we building today?",
   timestamp: new Date(),
 };
 
@@ -74,14 +74,11 @@ export interface ParsedFile {
 /** Parse ```lang:filepath code blocks from AI output */
 export function parseFileBlocks(content: string): ParsedFile[] {
   const files: ParsedFile[] = [];
-  // Match: ```lang:path/to/file.ext\n...content...\n```
-  // Also handle ```lang:path (with optional spaces)
   const regex = /```[\w]*:([\w/.@\-]+)\s*\n([\s\S]*?)```/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(content)) !== null) {
     let filePath = match[1].trim();
     const fileContent = match[2];
-    // Strip any absolute prefix the AI might add
     filePath = filePath.replace(/^\/?(home\/user\/app\/)?/, "");
     if (filePath && fileContent) {
       files.push({ path: filePath, content: fileContent });
@@ -102,6 +99,37 @@ export function parseDepsBlock(content: string): string[] {
   return deps;
 }
 
+/** Build project context string for AI */
+function buildProjectContext(fileContents: Record<string, string>): string {
+  const paths = Object.keys(fileContents);
+  if (paths.length === 0) return "";
+
+  let ctx = "Files:\n";
+  for (const p of paths.sort()) {
+    ctx += `- ${p}\n`;
+  }
+
+  // Include contents of key files (keep total under ~4000 chars)
+  const keyFiles = paths.filter(
+    (p) =>
+      p.endsWith("App.tsx") ||
+      p.endsWith("index.css") ||
+      p.endsWith("main.tsx")
+  );
+
+  let charBudget = 4000;
+  for (const p of keyFiles) {
+    const content = fileContents[p];
+    if (content && charBudget > 0) {
+      const snippet = content.slice(0, charBudget);
+      ctx += `\n--- ${p} ---\n${snippet}\n`;
+      charBudget -= snippet.length;
+    }
+  }
+
+  return ctx;
+}
+
 export function useAIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MSG]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -111,6 +139,12 @@ export function useAIChat() {
   const [initialPromptSent, setInitialPromptSent] = useState(false);
 
   const fileWriteRef = useRef<((files: ParsedFile[], deps: string[]) => void) | null>(null);
+  const fileContentsRef = useRef<Record<string, string>>({});
+
+  /** Update the current project files (for context) */
+  const updateProjectFiles = useCallback((files: Record<string, string>) => {
+    fileContentsRef.current = files;
+  }, []);
 
   const sendMessage = useCallback(
     async (input: string) => {
@@ -146,10 +180,14 @@ export function useAIChat() {
       };
 
       try {
-        const allMsgs = [...messages, userMsg].map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        const allMsgs = [...messages, userMsg]
+          .filter((m) => m.id !== "welcome")
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+          }));
+
+        const projectContext = buildProjectContext(fileContentsRef.current);
 
         const resp = await fetch(CHAT_URL, {
           method: "POST",
@@ -162,6 +200,7 @@ export function useAIChat() {
             provider,
             model,
             userApiKey: provider !== "lovable" ? userApiKeys[provider] : undefined,
+            projectContext,
           }),
         });
 
@@ -228,5 +267,6 @@ export function useAIChat() {
     initialPromptSent,
     setInitialPromptSent,
     fileWriteRef,
+    updateProjectFiles,
   };
 }
