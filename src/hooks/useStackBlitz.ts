@@ -8,10 +8,7 @@ const STARTER_FILES: Record<string, string> = {
       private: true,
       version: "0.0.0",
       type: "module",
-      scripts: {
-        dev: "vite",
-        build: "vite build",
-      },
+      scripts: { dev: "vite", build: "vite build" },
       dependencies: {
         react: "^18.3.1",
         "react-dom": "^18.3.1",
@@ -62,7 +59,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   "src/App.tsx": `export default function App() {
   return (
     <div className="flex items-center justify-center h-screen font-sans bg-neutral-950 text-neutral-400">
-      <p>Waiting for code generation...</p>
+      <p className="text-lg">Waiting for code generation...</p>
     </div>
   )
 }`,
@@ -90,17 +87,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   ),
 };
 
-const BASE_DEPS: Record<string, string> = {
-  react: "^18.3.1",
-  "react-dom": "^18.3.1",
-  "lucide-react": "^0.462.0",
-};
+const BASE_DEPS = new Set(["react", "react-dom", "lucide-react"]);
 
 export function useStackBlitz() {
   const vmRef = useRef<VM | null>(null);
   const [isBooting, setIsBooting] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const installedDeps = useRef<Set<string>>(new Set(Object.keys(BASE_DEPS)));
+  const installedDeps = useRef<Set<string>>(new Set(BASE_DEPS));
 
   const boot = useCallback(
     async (container: HTMLElement) => {
@@ -110,7 +103,7 @@ export function useStackBlitz() {
         const vm = await sdk.embedProject(
           container,
           {
-            title: "Generated App",
+            title: "App Preview",
             template: "node",
             files: STARTER_FILES,
           },
@@ -139,7 +132,6 @@ export function useStackBlitz() {
     if (newDeps.length === 0) return;
 
     try {
-      // Read current package.json
       const files = await vmRef.current.getFsSnapshot();
       const pkgStr = files?.["package.json"];
       if (!pkgStr) return;
@@ -151,7 +143,6 @@ export function useStackBlitz() {
         installedDeps.current.add(dep);
       }
 
-      // Write updated package.json — StackBlitz auto-installs
       await vmRef.current.applyFsDiff({
         create: { "package.json": JSON.stringify(pkg, null, 2) },
         destroy: [],
@@ -161,6 +152,7 @@ export function useStackBlitz() {
     }
   }, []);
 
+  /** Write files to the StackBlitz VM */
   const writeFiles = useCallback(
     async (files: { path: string; content: string }[]) => {
       if (!vmRef.current) return;
@@ -173,5 +165,27 @@ export function useStackBlitz() {
     []
   );
 
-  return { isBooting, isReady, boot, writeFiles, installDeps, vmRef };
+  /** Read a file from the StackBlitz VM */
+  const readFile = useCallback(async (path: string): Promise<string | null> => {
+    if (!vmRef.current) return null;
+    try {
+      const snapshot = await vmRef.current.getFsSnapshot();
+      return snapshot?.[path] ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /** Get all file paths from the StackBlitz VM */
+  const listFiles = useCallback(async (): Promise<string[]> => {
+    if (!vmRef.current) return [];
+    try {
+      const snapshot = await vmRef.current.getFsSnapshot();
+      return snapshot ? Object.keys(snapshot) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  return { isBooting, isReady, boot, writeFiles, installDeps, readFile, listFiles, vmRef };
 }
