@@ -91,41 +91,71 @@ const BASE_DEPS = new Set(["react", "react-dom", "lucide-react"]);
 
 export function useStackBlitz() {
   const vmRef = useRef<VM | null>(null);
+  const bootingRef = useRef(false);
   const [isBooting, setIsBooting] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
   const installedDeps = useRef<Set<string>>(new Set(BASE_DEPS));
 
-  const boot = useCallback(
-    async (container: HTMLElement) => {
-      if (vmRef.current || isBooting) return;
-      setIsBooting(true);
-      try {
-        const vm = await sdk.embedProject(
-          container,
-          {
-            title: "App Preview",
-            template: "node",
-            files: STARTER_FILES,
-          },
-          {
-            view: "preview",
-            hideNavigation: true,
-            hideDevTools: true,
-            height: "100%",
-          }
-        );
-        vmRef.current = vm;
-        setIsReady(true);
-      } catch (e) {
-        console.error("StackBlitz boot failed:", e);
-      } finally {
-        setIsBooting(false);
-      }
-    },
-    [isBooting]
-  );
+  const boot = useCallback(async (container: HTMLElement) => {
+    // Use ref guard to prevent double-boot (avoids stale closure issue)
+    if (vmRef.current || bootingRef.current) return;
+    bootingRef.current = true;
+    setIsBooting(true);
+    setBootError(null);
 
-  /** Install new npm deps by merging into package.json */
+    try {
+      console.log("[StackBlitz] Embedding project...");
+      const vm = await sdk.embedProject(
+        container,
+        {
+          title: "App Preview",
+          template: "node",
+          files: STARTER_FILES,
+        },
+        {
+          view: "preview",
+          hideNavigation: true,
+          hideDevTools: true,
+          height: "100%",
+        }
+      );
+      console.log("[StackBlitz] VM created, waiting for ready...");
+      vmRef.current = vm;
+
+      // Poll for the preview iframe to appear (indicates dev server is running)
+      let attempts = 0;
+      const maxAttempts = 60; // 30 seconds
+      const checkReady = () => {
+        return new Promise<void>((resolve) => {
+          const interval = setInterval(() => {
+            attempts++;
+            const iframe = container.querySelector("iframe");
+            if (iframe) {
+              clearInterval(interval);
+              console.log("[StackBlitz] Preview iframe detected, ready!");
+              resolve();
+            } else if (attempts >= maxAttempts) {
+              clearInterval(interval);
+              console.log("[StackBlitz] Timeout waiting for iframe, marking ready anyway");
+              resolve();
+            }
+          }, 500);
+        });
+      };
+
+      await checkReady();
+      setIsReady(true);
+      console.log("[StackBlitz] Boot complete");
+    } catch (e) {
+      console.error("[StackBlitz] Boot failed:", e);
+      setBootError(e instanceof Error ? e.message : "Boot failed");
+      bootingRef.current = false;
+    } finally {
+      setIsBooting(false);
+    }
+  }, []); // No dependencies - uses refs for guards
+
   const installDeps = useCallback(async (deps: string[]) => {
     if (!vmRef.current || deps.length === 0) return;
     const newDeps = deps.filter((d) => !installedDeps.current.has(d));
@@ -152,7 +182,6 @@ export function useStackBlitz() {
     }
   }, []);
 
-  /** Write files to the StackBlitz VM */
   const writeFiles = useCallback(
     async (files: { path: string; content: string }[]) => {
       if (!vmRef.current) return;
@@ -165,7 +194,6 @@ export function useStackBlitz() {
     []
   );
 
-  /** Read a file from the StackBlitz VM */
   const readFile = useCallback(async (path: string): Promise<string | null> => {
     if (!vmRef.current) return null;
     try {
@@ -176,7 +204,6 @@ export function useStackBlitz() {
     }
   }, []);
 
-  /** Get all file paths from the StackBlitz VM */
   const listFiles = useCallback(async (): Promise<string[]> => {
     if (!vmRef.current) return [];
     try {
@@ -187,5 +214,5 @@ export function useStackBlitz() {
     }
   }, []);
 
-  return { isBooting, isReady, boot, writeFiles, installDeps, readFile, listFiles, vmRef };
+  return { isBooting, isReady, bootError, boot, writeFiles, installDeps, readFile, listFiles, vmRef };
 }

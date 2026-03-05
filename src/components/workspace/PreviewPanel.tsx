@@ -4,10 +4,11 @@ import { Loader2, Monitor } from "lucide-react";
 interface PreviewPanelProps {
   isBooting: boolean;
   isReady: boolean;
+  bootError?: string | null;
   onContainerReady: (el: HTMLElement) => void;
 }
 
-export function PreviewPanel({ isBooting, isReady, onContainerReady }: PreviewPanelProps) {
+export function PreviewPanel({ isBooting, isReady, bootError, onContainerReady }: PreviewPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const didBoot = useRef(false);
 
@@ -16,7 +17,8 @@ export function PreviewPanel({ isBooting, isReady, onContainerReady }: PreviewPa
       didBoot.current = true;
       onContainerReady(containerRef.current);
     }
-  }, [onContainerReady]);
+    // Only run once on mount
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-full flex flex-col bg-[hsl(var(--background))] relative">
@@ -50,10 +52,12 @@ export function PreviewPanel({ isBooting, isReady, onContainerReady }: PreviewPa
           </div>
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground/60">
-              {isBooting ? "Setting up environment" : "Preview"}
+              {bootError ? "Failed to start" : isBooting ? "Setting up environment" : "Preview"}
             </p>
             <p className="text-xs text-muted-foreground/40">
-              {isBooting
+              {bootError
+                ? bootError
+                : isBooting
                 ? "Installing dependencies and starting dev server..."
                 : "Your app preview will appear here"}
             </p>
