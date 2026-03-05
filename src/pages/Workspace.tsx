@@ -203,6 +203,7 @@ const Workspace = () => {
               <PreviewPanel
                 isBooting={stackblitz.isBooting}
                 isReady={stackblitz.isReady}
+                bootError={stackblitz.bootError}
                 onContainerReady={handleContainerReady}
               />
             </div>
