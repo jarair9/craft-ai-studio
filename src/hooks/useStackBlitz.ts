@@ -97,12 +97,19 @@ export function useStackBlitz() {
   const [bootError, setBootError] = useState<string | null>(null);
   const installedDeps = useRef<Set<string>>(new Set(BASE_DEPS));
 
+  const containerRef = useRef<HTMLElement | null>(null);
+
   const boot = useCallback(async (container: HTMLElement) => {
-    // Use ref guard to prevent double-boot (avoids stale closure issue)
-    if (vmRef.current || bootingRef.current) return;
+    containerRef.current = container;
+    if (vmRef.current) return;
+    if (bootingRef.current) return;
     bootingRef.current = true;
     setIsBooting(true);
     setBootError(null);
+    setIsReady(false);
+
+    // Clear any previous iframe from retries
+    container.innerHTML = "";
 
     try {
       console.log("[StackBlitz] Embedding project...");
@@ -118,43 +125,32 @@ export function useStackBlitz() {
           hideNavigation: true,
           hideDevTools: true,
           height: "100%",
-        }
+        } as any
       );
-      console.log("[StackBlitz] VM created, waiting for ready...");
+      console.log("[StackBlitz] VM created");
       vmRef.current = vm;
 
-      // Poll for the preview iframe to appear (indicates dev server is running)
-      let attempts = 0;
-      const maxAttempts = 60; // 30 seconds
-      const checkReady = () => {
-        return new Promise<void>((resolve) => {
-          const interval = setInterval(() => {
-            attempts++;
-            const iframe = container.querySelector("iframe");
-            if (iframe) {
-              clearInterval(interval);
-              console.log("[StackBlitz] Preview iframe detected, ready!");
-              resolve();
-            } else if (attempts >= maxAttempts) {
-              clearInterval(interval);
-              console.log("[StackBlitz] Timeout waiting for iframe, marking ready anyway");
-              resolve();
-            }
-          }, 500);
-        });
-      };
-
-      await checkReady();
+      // Wait a bit for the dev server to spin up
+      await new Promise((r) => setTimeout(r, 2000));
       setIsReady(true);
       console.log("[StackBlitz] Boot complete");
     } catch (e) {
       console.error("[StackBlitz] Boot failed:", e);
       setBootError(e instanceof Error ? e.message : "Boot failed");
-      bootingRef.current = false;
+      vmRef.current = null;
     } finally {
+      bootingRef.current = false;
       setIsBooting(false);
     }
-  }, []); // No dependencies - uses refs for guards
+  }, []);
+
+  const retry = useCallback(() => {
+    vmRef.current = null;
+    bootingRef.current = false;
+    if (containerRef.current) {
+      boot(containerRef.current);
+    }
+  }, [boot]);
 
   const installDeps = useCallback(async (deps: string[]) => {
     if (!vmRef.current || deps.length === 0) return;
@@ -214,5 +210,5 @@ export function useStackBlitz() {
     }
   }, []);
 
-  return { isBooting, isReady, bootError, boot, writeFiles, installDeps, readFile, listFiles, vmRef };
+  return { isBooting, isReady, bootError, boot, retry, writeFiles, installDeps, readFile, listFiles, vmRef };
 }
