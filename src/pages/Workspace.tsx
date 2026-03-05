@@ -205,6 +205,7 @@ const Workspace = () => {
                 isReady={stackblitz.isReady}
                 bootError={stackblitz.bootError}
                 onContainerReady={handleContainerReady}
+                onRetry={stackblitz.retry}
               />
             </div>
 

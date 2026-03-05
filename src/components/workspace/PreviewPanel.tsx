@@ -1,14 +1,16 @@
 import { useEffect, useRef } from "react";
-import { Loader2, Monitor } from "lucide-react";
+import { Loader2, Monitor, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface PreviewPanelProps {
   isBooting: boolean;
   isReady: boolean;
   bootError?: string | null;
   onContainerReady: (el: HTMLElement) => void;
+  onRetry?: () => void;
 }
 
-export function PreviewPanel({ isBooting, isReady, bootError, onContainerReady }: PreviewPanelProps) {
+export function PreviewPanel({ isBooting, isReady, bootError, onContainerReady, onRetry }: PreviewPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const didBoot = useRef(false);
 
@@ -66,6 +68,11 @@ export function PreviewPanel({ isBooting, isReady, bootError, onContainerReady }
             <div className="flex items-center justify-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-primary/60" />
             </div>
+          )}
+          {bootError && onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry} className="gap-2 mt-2">
+              <RotateCcw className="h-3.5 w-3.5" /> Retry
+            </Button>
           )}
         </div>
       </div>
