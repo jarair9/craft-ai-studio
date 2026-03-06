@@ -1,12 +1,5 @@
 import { useState, useCallback, useRef } from "react";
 import { WebContainer, type FileSystemTree } from "@webcontainer/api";
-import { auth } from "@webcontainer/api";
-
-// Authenticate with WebContainer API
-auth.init({
-  clientId: "wc_api_jarairkhan211_385ddd7aabd9b98184c24fe5059dc182",
-  scope: "",
-});
 
 const STARTER_FILES: FileSystemTree = {
   "package.json": {
@@ -148,7 +141,7 @@ export function useWebContainer() {
 
     try {
       console.log("[WebContainer] Booting...");
-      const wc = await WebContainer.boot();
+      const wc = await WebContainer.boot({ coep: "credentialless" });
       wcRef.current = wc;
       console.log("[WebContainer] Mounting files...");
       await wc.mount(STARTER_FILES);
