@@ -14,7 +14,7 @@ import { CodeViewer } from "@/components/workspace/CodeViewer";
 import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 import { ApiKeySettings } from "@/components/workspace/ApiKeySettings";
 import { useAIChat, type ParsedFile } from "@/hooks/useAIChat";
-import { useStackBlitz } from "@/hooks/useStackBlitz";
+import { useWebContainer } from "@/hooks/useWebContainer";
 import { cn } from "@/lib/utils";
 
 type RightView = "preview" | "code";
@@ -41,7 +41,7 @@ const Workspace = () => {
   });
 
   const chat = useAIChat();
-  const stackblitz = useStackBlitz();
+  const wc = useWebContainer();
   const didInit = useRef(false);
 
   // Keep AI chat aware of current project files
@@ -49,15 +49,15 @@ const Workspace = () => {
     chat.updateProjectFiles(fileContents);
   }, [fileContents, chat.updateProjectFiles]);
 
-  // Wire up AI file writes → StackBlitz + local state
+  // Wire up AI file writes → WebContainer + local state
   useEffect(() => {
     chat.fileWriteRef.current = async (files: ParsedFile[], deps: string[]) => {
       setBuildComplete(false);
 
       // Install dependencies first
-      if (deps.length > 0 && stackblitz.isReady) {
+      if (deps.length > 0 && wc.isReady) {
         setWritingFiles(["📦 Installing " + deps.join(", ") + "..."]);
-        await stackblitz.installDeps(deps);
+        await wc.installDeps(deps);
         await new Promise((r) => setTimeout(r, 500));
       }
 
@@ -71,9 +71,9 @@ const Workspace = () => {
         await new Promise((r) => setTimeout(r, 200));
       }
 
-      // Write all files to StackBlitz
-      if (stackblitz.isReady && files.length > 0) {
-        await stackblitz.writeFiles(files.map((f) => ({ path: f.path, content: f.content })));
+      // Write all files to WebContainer
+      if (wc.isReady && files.length > 0) {
+        await wc.writeFiles(files.map((f) => ({ path: f.path, content: f.content })));
       }
 
       // Auto-select first file and switch to code view
@@ -88,7 +88,7 @@ const Workspace = () => {
         setTimeout(() => setBuildComplete(false), 4000);
       }, 400);
     };
-  }, [stackblitz.isReady, stackblitz.writeFiles, stackblitz.installDeps]);
+  }, [wc.isReady, wc.writeFiles, wc.installDeps]);
 
   // Send initial prompt from project description
   useEffect(() => {
@@ -100,13 +100,6 @@ const Workspace = () => {
       chat.sendMessage(project.description);
     }
   }, [project]);
-
-  const handleContainerReady = useCallback(
-    (el: HTMLElement) => {
-      stackblitz.boot(el);
-    },
-    [stackblitz.boot]
-  );
 
   const handleFileClick = (path: string) => {
     setSelectedFilePath(path);
@@ -201,11 +194,12 @@ const Workspace = () => {
               )}
             >
               <PreviewPanel
-                isBooting={stackblitz.isBooting}
-                isReady={stackblitz.isReady}
-                bootError={stackblitz.bootError}
-                onContainerReady={handleContainerReady}
-                onRetry={stackblitz.retry}
+                isBooting={wc.isBooting}
+                isReady={wc.isReady}
+                bootError={wc.bootError}
+                previewUrl={wc.previewUrl}
+                onBoot={wc.boot}
+                onRetry={wc.retry}
               />
             </div>
 

@@ -6,45 +6,48 @@ interface PreviewPanelProps {
   isBooting: boolean;
   isReady: boolean;
   bootError?: string | null;
-  onContainerReady: (el: HTMLElement) => void;
+  previewUrl?: string | null;
+  onBoot: () => void;
   onRetry?: () => void;
 }
 
-export function PreviewPanel({ isBooting, isReady, bootError, onContainerReady, onRetry }: PreviewPanelProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+export function PreviewPanel({ isBooting, isReady, bootError, previewUrl, onBoot, onRetry }: PreviewPanelProps) {
   const didBoot = useRef(false);
 
   useEffect(() => {
-    if (containerRef.current && !didBoot.current) {
+    if (!didBoot.current) {
       didBoot.current = true;
-      onContainerReady(containerRef.current);
+      onBoot();
     }
-    // Only run once on mount
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-full flex flex-col bg-[hsl(var(--background))] relative">
-      {/* Preview URL bar — always rendered, visibility toggled */}
+      {/* Preview URL bar */}
       <div
         className="h-9 flex items-center gap-2 px-3 border-b border-border/30 bg-[hsl(var(--sidebar-background))] shrink-0"
-        style={{ display: isReady ? "flex" : "none" }}
+        style={{ display: isReady && previewUrl ? "flex" : "none" }}
       >
         <Monitor className="h-3.5 w-3.5 text-muted-foreground/40" />
         <div className="flex-1 h-6 rounded-md bg-secondary/50 border border-border/30 flex items-center px-2.5">
-          <span className="text-[11px] text-muted-foreground/50 font-mono">localhost:3000</span>
+          <span className="text-[11px] text-muted-foreground/50 font-mono">localhost:5173</span>
         </div>
       </div>
 
-      {/* StackBlitz container — aggressively hide all branding */}
-      <div
-        ref={containerRef}
-        className="flex-1 w-full stackblitz-embed"
-      />
+      {/* Preview iframe */}
+      {isReady && previewUrl && (
+        <iframe
+          src={previewUrl}
+          className="flex-1 w-full border-0"
+          title="App Preview"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+        />
+      )}
 
-      {/* Loading overlay — always rendered, visibility toggled */}
+      {/* Loading overlay */}
       <div
         className="absolute inset-0 flex flex-col items-center justify-center bg-[hsl(var(--background))] z-10"
-        style={{ display: isReady ? "none" : "flex" }}
+        style={{ display: isReady && previewUrl ? "none" : "flex" }}
       >
         <div className="text-center space-y-4">
           <div className="relative">
