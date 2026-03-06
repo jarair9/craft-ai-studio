@@ -121,9 +121,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 const BASE_DEPS = new Set(["react", "react-dom", "lucide-react"]);
 
+// Singleton — WebContainer only allows ONE instance globally
+let globalWc: WebContainer | null = null;
+let globalBooting = false;
+
 export function useWebContainer() {
   const wcRef = useRef<WebContainer | null>(null);
-  const bootingRef = useRef(false);
   const [isBooting, setIsBooting] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -131,9 +134,14 @@ export function useWebContainer() {
   const installedDeps = useRef<Set<string>>(new Set(BASE_DEPS));
 
   const boot = useCallback(async () => {
-    if (wcRef.current) return;
-    if (bootingRef.current) return;
-    bootingRef.current = true;
+    // If already have a running instance, reuse it
+    if (globalWc) {
+      wcRef.current = globalWc;
+      setIsReady(true);
+      return;
+    }
+    if (globalBooting) return;
+    globalBooting = true;
     setIsBooting(true);
     setBootError(null);
     setIsReady(false);
@@ -142,6 +150,7 @@ export function useWebContainer() {
     try {
       console.log("[WebContainer] Booting...");
       const wc = await WebContainer.boot({ coep: "credentialless" });
+      globalWc = wc;
       wcRef.current = wc;
       console.log("[WebContainer] Mounting files...");
       await wc.mount(STARTER_FILES);
@@ -151,6 +160,7 @@ export function useWebContainer() {
         console.log("[WebContainer] Server ready at:", url);
         setPreviewUrl(url);
         setIsReady(true);
+        setIsBooting(false);
       });
 
       // Install dependencies
@@ -166,9 +176,9 @@ export function useWebContainer() {
       console.log("[WebContainer] Starting dev server...");
       await wc.spawn("npm", ["run", "dev"]);
 
-      // Timeout fallback — if server-ready doesn't fire within 30s, error out
+      // Timeout fallback
       setTimeout(() => {
-        if (!wcRef.current) return;
+        if (!globalWc) return;
         setIsReady((ready) => {
           if (!ready) {
             setBootError("Dev server did not start within 30 seconds");
@@ -180,19 +190,25 @@ export function useWebContainer() {
     } catch (e) {
       console.error("[WebContainer] Boot failed:", e);
       setBootError(e instanceof Error ? e.message : "Boot failed");
+      // Teardown on failure so retry can work
+      if (globalWc) {
+        await globalWc.teardown();
+      }
+      globalWc = null;
       wcRef.current = null;
-    } finally {
-      bootingRef.current = false;
       setIsBooting(false);
+    } finally {
+      globalBooting = false;
     }
   }, []);
 
   const retry = useCallback(async () => {
-    if (wcRef.current) {
-      await wcRef.current.teardown();
+    if (globalWc) {
+      await globalWc.teardown();
     }
+    globalWc = null;
     wcRef.current = null;
-    bootingRef.current = false;
+    globalBooting = false;
     boot();
   }, [boot]);
 
