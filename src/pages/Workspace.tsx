@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ import { CodeViewer } from "@/components/workspace/CodeViewer";
 import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 import { ApiKeySettings } from "@/components/workspace/ApiKeySettings";
 import { useAIChat, type ParsedFile } from "@/hooks/useAIChat";
-import { useWebContainer } from "@/hooks/useWebContainer";
+import { useSandbox } from "@/hooks/useSandbox";
 import { cn } from "@/lib/utils";
 
 type RightView = "preview" | "code";
@@ -41,7 +41,7 @@ const Workspace = () => {
   });
 
   const chat = useAIChat();
-  const wc = useWebContainer();
+  const sandbox = useSandbox(id);
   const didInit = useRef(false);
 
   // Keep AI chat aware of current project files
@@ -49,15 +49,15 @@ const Workspace = () => {
     chat.updateProjectFiles(fileContents);
   }, [fileContents, chat.updateProjectFiles]);
 
-  // Wire up AI file writes → WebContainer + local state
+  // Wire up AI file writes → E2B sandbox + local state
   useEffect(() => {
     chat.fileWriteRef.current = async (files: ParsedFile[], deps: string[]) => {
       setBuildComplete(false);
 
       // Install dependencies first
-      if (deps.length > 0 && wc.isReady) {
+      if (deps.length > 0 && sandbox.sandboxId) {
         setWritingFiles(["📦 Installing " + deps.join(", ") + "..."]);
-        await wc.installDeps(deps);
+        await sandbox.execCommand(`cd /home/user/app && npm install ${deps.join(" ")}`);
         await new Promise((r) => setTimeout(r, 500));
       }
 
@@ -68,12 +68,14 @@ const Workspace = () => {
           return [...filtered, `→ Writing ${f.path}`];
         });
         setFileContents((prev) => ({ ...prev, [f.path]: f.content }));
-        await new Promise((r) => setTimeout(r, 200));
-      }
 
-      // Write all files to WebContainer
-      if (wc.isReady && files.length > 0) {
-        await wc.writeFiles(files.map((f) => ({ path: f.path, content: f.content })));
+        // Write file to E2B sandbox
+        if (sandbox.sandboxId) {
+          const fullPath = f.path.startsWith("/") ? f.path : `/home/user/app/${f.path}`;
+          await sandbox.writeFile(fullPath, f.content);
+        }
+
+        await new Promise((r) => setTimeout(r, 200));
       }
 
       // Auto-select first file and switch to code view
@@ -88,7 +90,7 @@ const Workspace = () => {
         setTimeout(() => setBuildComplete(false), 4000);
       }, 400);
     };
-  }, [wc.isReady, wc.writeFiles, wc.installDeps]);
+  }, [sandbox.sandboxId, sandbox.writeFile, sandbox.execCommand]);
 
   // Send initial prompt from project description
   useEffect(() => {
@@ -194,12 +196,12 @@ const Workspace = () => {
               )}
             >
               <PreviewPanel
-                isBooting={wc.isBooting}
-                isReady={wc.isReady}
-                bootError={wc.bootError}
-                previewUrl={wc.previewUrl}
-                onBoot={wc.boot}
-                onRetry={wc.retry}
+                isBooting={sandbox.isCreating}
+                isReady={!!sandbox.sandboxUrl}
+                bootError={null}
+                previewUrl={sandbox.sandboxUrl}
+                onBoot={sandbox.createSandbox}
+                onRetry={sandbox.createSandbox}
               />
             </div>
 
