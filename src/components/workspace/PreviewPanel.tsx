@@ -15,11 +15,11 @@ export function PreviewPanel({ isBooting, isReady, bootError, previewUrl, onBoot
   const didBoot = useRef(false);
 
   useEffect(() => {
-    if (!didBoot.current) {
+    if (!didBoot.current && !isReady && !isBooting) {
       didBoot.current = true;
       onBoot();
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isReady, isBooting]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-full flex flex-col bg-[hsl(var(--background))] relative">
@@ -30,7 +30,9 @@ export function PreviewPanel({ isBooting, isReady, bootError, previewUrl, onBoot
       >
         <Monitor className="h-3.5 w-3.5 text-muted-foreground/40" />
         <div className="flex-1 h-6 rounded-md bg-secondary/50 border border-border/30 flex items-center px-2.5">
-          <span className="text-[11px] text-muted-foreground/50 font-mono">localhost:5173</span>
+          <span className="text-[11px] text-muted-foreground/50 font-mono truncate">
+            {previewUrl || "localhost:3000"}
+          </span>
         </div>
       </div>
 
@@ -57,13 +59,13 @@ export function PreviewPanel({ isBooting, isReady, bootError, previewUrl, onBoot
           </div>
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground/60">
-              {bootError ? "Failed to start" : isBooting ? "Setting up environment" : "Preview"}
+              {bootError ? "Failed to start" : isBooting ? "Creating sandbox" : "Preview"}
             </p>
             <p className="text-xs text-muted-foreground/40">
               {bootError
                 ? bootError
                 : isBooting
-                ? "Installing dependencies and starting dev server..."
+                ? "Setting up E2B sandbox and installing dependencies..."
                 : "Your app preview will appear here"}
             </p>
           </div>
