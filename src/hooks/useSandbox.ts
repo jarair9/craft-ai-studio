@@ -72,26 +72,38 @@ export function useSandbox(projectId: string | undefined) {
         await callSandbox({
           action: "exec",
           sandboxId: id,
-          cmd: "cd /home/user/app && npm install",
+          cmd: "cd /home/user/app && npm install tailwindcss @tailwindcss/vite lucide-react",
           timeout: 120,
         });
+
+        // Write a vite config that listens on 0.0.0.0:3000
+        await callSandbox({
+          action: "writeFile",
+          sandboxId: id,
+          path: "/home/user/app/vite.config.ts",
+          content: `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    strictPort: true,
+  },
+})`,
+        });
+
         addTerminalLine("output", "Starting dev server on port 3000...");
-        // Start vite dev server in background (--host so it's accessible, --port 3000)
-        // Install tailwindcss and lucide-react for AI-generated code
+        // Start vite in background and wait for it to be ready
         await callSandbox({
           action: "exec",
           sandboxId: id,
-          cmd: "cd /home/user/app && npm install tailwindcss @tailwindcss/vite lucide-react",
-          timeout: 60,
+          cmd: 'cd /home/user/app && nohup npx vite > /tmp/vite.log 2>&1 & sleep 5 && cat /tmp/vite.log',
+          timeout: 30,
         });
-        // Start vite dev server in background
-        await callSandbox({
-          action: "exec",
-          sandboxId: id,
-          cmd: "cd /home/user/app && nohup npx vite --host 0.0.0.0 --port 3000 > /dev/null 2>&1 &",
-          timeout: 5,
-        });
-        addTerminalLine("output", "✓ Dev server starting on port 3000");
+        addTerminalLine("output", "✓ Dev server started on port 3000");
       } catch (bootstrapErr: any) {
         addTerminalLine("error", `Bootstrap warning: ${bootstrapErr.message}`);
       }
