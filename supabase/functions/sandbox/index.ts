@@ -47,10 +47,18 @@ serve(async (req) => {
           // For background/long-running processes, start and catch the inevitable timeout
           try {
             await sandbox.commands.run(cmd, { timeoutMs: 3000 });
-          } catch (_e: any) {
-            // Timeout is expected for long-running processes like dev servers
+            result = { stdout: "Process completed", stderr: "", exitCode: 0 };
+          } catch (bgErr: any) {
+            if (bgErr.name === "TimeoutError") {
+              // Timeout means the process is still running (expected for dev servers)
+              result = { stdout: "Process started in background", stderr: "", exitCode: 0 };
+            } else if (bgErr.name === "CommandExitError" && bgErr.result) {
+              // Process exited with error - return the details
+              result = { stdout: bgErr.result.stdout || "", stderr: bgErr.result.stderr || "", exitCode: bgErr.result.exitCode };
+            } else {
+              throw bgErr;
+            }
           }
-          result = { stdout: "Process started in background", stderr: "", exitCode: 0 };
         } else {
           const cmdResult = await sandbox.commands.run(cmd, {
             timeoutMs: (timeout || 30) * 1000,
