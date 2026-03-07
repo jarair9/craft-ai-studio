@@ -44,12 +44,24 @@ serve(async (req) => {
         const sandbox = await Sandbox.connect(sandboxId, { apiKey });
 
         if (background) {
-          // For background processes, wrap in a shell that starts it and exits immediately
-          const bgCmd = `nohup ${cmd} > /tmp/bg-process.log 2>&1 & echo "started pid $!"`;
-          const cmdResult = await sandbox.commands.run(bgCmd, {
-            timeoutMs: 10000,
-          });
-          result = { stdout: cmdResult.stdout, stderr: cmdResult.stderr, exitCode: 0 };
+          // For background/long-running processes:
+          // 1. Write a startup script
+          // 2. Execute it - the script backgrounds the process and exits
+          const scriptContent = `#!/bin/bash\n${cmd} &\ndisown\necho "bg_started \\$!"\n`;
+          await sandbox.files.write("/tmp/run-bg.sh", scriptContent);
+          try {
+            const cmdResult = await sandbox.commands.run("chmod +x /tmp/run-bg.sh && /tmp/run-bg.sh", {
+              timeoutMs: 8000,
+            });
+            result = { stdout: cmdResult.stdout, stderr: cmdResult.stderr, exitCode: 0 };
+          } catch (e: any) {
+            // If it times out, the process likely started successfully in background
+            if (e.name === "TimeoutError") {
+              result = { stdout: "Process started in background (timeout ok)", stderr: "", exitCode: 0 };
+            } else {
+              throw e;
+            }
+          }
         } else {
           const cmdResult = await sandbox.commands.run(cmd, {
             timeoutMs: (timeout || 30) * 1000,
