@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, sandboxId, path, content, cmd, timeout } = await req.json();
+    const { action, sandboxId, path, content, cmd, timeout, background } = await req.json();
     const apiKey = Deno.env.get("E2B_API_KEY");
     if (!apiKey) throw new Error("E2B_API_KEY is not configured");
 
@@ -42,14 +42,25 @@ serve(async (req) => {
       case "exec": {
         if (!sandboxId || !cmd) throw new Error("sandboxId and cmd required");
         const sandbox = await Sandbox.connect(sandboxId, { apiKey });
-        const cmdResult = await sandbox.commands.run(cmd, {
-          timeoutMs: (timeout || 30) * 1000,
-        });
-        result = {
-          stdout: cmdResult.stdout,
-          stderr: cmdResult.stderr,
-          exitCode: cmdResult.exitCode,
-        };
+
+        if (background) {
+          // Fire-and-forget: start process without waiting for it to finish
+          await sandbox.commands.run(`bash -c '${cmd.replace(/'/g, "'\\''")} &'`, {
+            timeoutMs: 5000,
+          }).catch(() => {
+            // Expected to "fail" since the background process outlives the timeout
+          });
+          result = { stdout: "Process started in background", stderr: "", exitCode: 0 };
+        } else {
+          const cmdResult = await sandbox.commands.run(cmd, {
+            timeoutMs: (timeout || 30) * 1000,
+          });
+          result = {
+            stdout: cmdResult.stdout,
+            stderr: cmdResult.stderr,
+            exitCode: cmdResult.exitCode,
+          };
+        }
         break;
       }
 
