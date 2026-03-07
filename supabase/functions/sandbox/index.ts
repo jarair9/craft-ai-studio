@@ -44,13 +44,12 @@ serve(async (req) => {
         const sandbox = await Sandbox.connect(sandboxId, { apiKey });
 
         if (background) {
-          // Fire-and-forget: start process without waiting for it to finish
-          await sandbox.commands.run(`bash -c '${cmd.replace(/'/g, "'\\''")} &'`, {
-            timeoutMs: 5000,
-          }).catch(() => {
-            // Expected to "fail" since the background process outlives the timeout
+          // For background processes, wrap in a shell that starts it and exits immediately
+          const bgCmd = `nohup ${cmd} > /tmp/bg-process.log 2>&1 & echo "started pid $!"`;
+          const cmdResult = await sandbox.commands.run(bgCmd, {
+            timeoutMs: 10000,
           });
-          result = { stdout: "Process started in background", stderr: "", exitCode: 0 };
+          result = { stdout: cmdResult.stdout, stderr: cmdResult.stderr, exitCode: 0 };
         } else {
           const cmdResult = await sandbox.commands.run(cmd, {
             timeoutMs: (timeout || 30) * 1000,
