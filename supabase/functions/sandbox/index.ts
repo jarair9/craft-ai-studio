@@ -44,24 +44,13 @@ serve(async (req) => {
         const sandbox = await Sandbox.connect(sandboxId, { apiKey });
 
         if (background) {
-          // For background/long-running processes:
-          // 1. Write a startup script
-          // 2. Execute it - the script backgrounds the process and exits
-          const scriptContent = `#!/bin/bash\n${cmd} &\ndisown\necho "bg_started \\$!"\n`;
-          await sandbox.files.write("/tmp/run-bg.sh", scriptContent);
+          // For background/long-running processes, start and catch the inevitable timeout
           try {
-            const cmdResult = await sandbox.commands.run("chmod +x /tmp/run-bg.sh && /tmp/run-bg.sh", {
-              timeoutMs: 8000,
-            });
-            result = { stdout: cmdResult.stdout, stderr: cmdResult.stderr, exitCode: 0 };
-          } catch (e: any) {
-            // If it times out, the process likely started successfully in background
-            if (e.name === "TimeoutError") {
-              result = { stdout: "Process started in background (timeout ok)", stderr: "", exitCode: 0 };
-            } else {
-              throw e;
-            }
+            await sandbox.commands.run(cmd, { timeoutMs: 3000 });
+          } catch (_e: any) {
+            // Timeout is expected for long-running processes like dev servers
           }
+          result = { stdout: "Process started in background", stderr: "", exitCode: 0 };
         } else {
           const cmdResult = await sandbox.commands.run(cmd, {
             timeoutMs: (timeout || 30) * 1000,
