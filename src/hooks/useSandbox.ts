@@ -96,13 +96,15 @@ export default defineConfig({
         });
 
         addTerminalLine("output", "Starting dev server on port 3000...");
-        // Start vite in background and wait for it to be ready
+        // Kill any existing process on port 3000, then start vite in background
         await callSandbox({
           action: "exec",
           sandboxId: id,
-          cmd: 'cd /home/user/app && nohup npx vite > /tmp/vite.log 2>&1 & sleep 5 && cat /tmp/vite.log',
-          timeout: 30,
+          cmd: "fuser -k 3000/tcp 2>/dev/null; sleep 1; cd /home/user/app && npx vite",
+          background: true,
         });
+        // Give vite a moment to start
+        await new Promise((r) => setTimeout(r, 6000));
         addTerminalLine("output", "✓ Dev server started on port 3000");
       } catch (bootstrapErr: any) {
         addTerminalLine("error", `Bootstrap warning: ${bootstrapErr.message}`);

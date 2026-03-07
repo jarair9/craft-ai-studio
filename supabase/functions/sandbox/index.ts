@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { action, sandboxId, path, content, cmd, timeout } = await req.json();
+    const { action, sandboxId, path, content, cmd, timeout, background } = await req.json();
     const apiKey = Deno.env.get("E2B_API_KEY");
     if (!apiKey) throw new Error("E2B_API_KEY is not configured");
 
@@ -42,14 +42,33 @@ serve(async (req) => {
       case "exec": {
         if (!sandboxId || !cmd) throw new Error("sandboxId and cmd required");
         const sandbox = await Sandbox.connect(sandboxId, { apiKey });
-        const cmdResult = await sandbox.commands.run(cmd, {
-          timeoutMs: (timeout || 30) * 1000,
-        });
-        result = {
-          stdout: cmdResult.stdout,
-          stderr: cmdResult.stderr,
-          exitCode: cmdResult.exitCode,
-        };
+
+        if (background) {
+          // For background/long-running processes, start and catch the inevitable timeout
+          try {
+            await sandbox.commands.run(cmd, { timeoutMs: 3000 });
+            result = { stdout: "Process completed", stderr: "", exitCode: 0 };
+          } catch (bgErr: any) {
+            if (bgErr.name === "TimeoutError") {
+              // Timeout means the process is still running (expected for dev servers)
+              result = { stdout: "Process started in background", stderr: "", exitCode: 0 };
+            } else if (bgErr.name === "CommandExitError" && bgErr.result) {
+              // Process exited with error - return the details
+              result = { stdout: bgErr.result.stdout || "", stderr: bgErr.result.stderr || "", exitCode: bgErr.result.exitCode };
+            } else {
+              throw bgErr;
+            }
+          }
+        } else {
+          const cmdResult = await sandbox.commands.run(cmd, {
+            timeoutMs: (timeout || 30) * 1000,
+          });
+          result = {
+            stdout: cmdResult.stdout,
+            stderr: cmdResult.stderr,
+            exitCode: cmdResult.exitCode,
+          };
+        }
         break;
       }
 
