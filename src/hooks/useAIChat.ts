@@ -1,4 +1,6 @@
 import { useState, useCallback, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { DesignTokens } from "@/components/workspace/ThemeSettings";
 
 export interface ChatMessage {
   id: string;
@@ -15,43 +17,43 @@ export interface AIProvider {
 
 export const AI_PROVIDERS: AIProvider[] = [
   {
-    id: "lovable",
-    name: "ForgeAI (Built-in)",
+    id: "cerebras",
+    name: "Cerebras",
     models: [
-      { id: "gemini-flash", name: "Gemini Flash" },
-      { id: "gemini-pro", name: "Gemini Pro" },
-      { id: "gpt-5", name: "GPT-5" },
-      { id: "gpt-5-mini", name: "GPT-5 Mini" },
+      { id: "gpt-oss-120b", name: "GPT-OSS 120B" },
+      { id: "llama-3.3-70b", name: "Llama 3.3 70B" },
+    ],
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    models: [
+      { id: "gpt-4o", name: "GPT-4o" },
+      { id: "gpt-4o-mini", name: "GPT-4o-mini" },
+    ],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    models: [
+      { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
+      { id: "claude-3-5-haiku-20241022", name: "Claude 3.5 Haiku" },
+    ],
+  },
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    models: [
+      { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro" },
+      { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash" },
     ],
   },
   {
     id: "groq",
     name: "Groq",
     models: [
-      { id: "llama-70b", name: "Llama 3.3 70B" },
-      { id: "llama-8b", name: "Llama 3.1 8B" },
-      { id: "mixtral", name: "Mixtral 8x7B" },
-      { id: "gemma2", name: "Gemma2 9B" },
-    ],
-  },
-  {
-    id: "mistral",
-    name: "Mistral",
-    models: [
-      { id: "mistral-large", name: "Mistral Large" },
-      { id: "codestral", name: "Codestral" },
-      { id: "mistral-medium", name: "Mistral Medium" },
-      { id: "mistral-small", name: "Mistral Small" },
-    ],
-  },
-  {
-    id: "openrouter",
-    name: "OpenRouter",
-    models: [
-      { id: "claude-sonnet", name: "Claude Sonnet 4" },
-      { id: "deepseek-v3", name: "DeepSeek V3" },
-      { id: "gpt-5", name: "GPT-5" },
-      { id: "gemini-pro", name: "Gemini Pro" },
+      { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
+      { id: "mixtral-8x7b-32768", name: "Mixtral 8x7B" },
     ],
   },
 ];
@@ -62,7 +64,7 @@ const WELCOME_MSG: ChatMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "Hey! I'm **ForgeAI**, your coding agent. I'll analyze your request, plan the architecture, write the code, and deploy it to the preview — all step by step.\n\nWhat are we building today?",
+    "System initialized. I am AURA, your professional development agent. I can utilize advanced models including Claude 3.5 Sonnet and GPT-4o, execute terminal commands, and perform deep project analysis to accelerate your development workflow. How can I assist you today?",
   timestamp: new Date(),
 };
 
@@ -99,6 +101,43 @@ export function parseDepsBlock(content: string): string[] {
   return deps;
 }
 
+/** Parse ```shell:command tags */
+export function parseShellCommands(content: string): string[] {
+  const cmds: string[] = [];
+  const regex = /```shell:([^\n]+)\s*\n?([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    cmds.push(match[1].trim());
+  }
+  return cmds;
+}
+
+/** Parse ```read:filepath tags */
+export function parseReadFiles(content: string): string[] {
+  const paths: string[] = [];
+  const regex = /```read:([^\n]+)\s*\n?([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(content)) !== null) {
+    paths.push(match[1].trim());
+  }
+  return paths;
+}
+
+export function parseReadAction(content: string): string[] {
+  const readRegex = /```read:([^\n]+)/g;
+  return [...content.matchAll(readRegex)].map((m) => m[1].trim());
+}
+
+export function parseShellAction(content: string): string[] {
+  const shellRegex = /```shell:([^\n]+)/g;
+  return [...content.matchAll(shellRegex)].map((m) => m[1].trim());
+}
+
+export function parseSearchAction(content: string): string[] {
+  const searchRegex = /```search:([^\n]+)/g;
+  return [...content.matchAll(searchRegex)].map((m) => m[1].trim());
+}
+
 /** Build project context string for AI */
 function buildProjectContext(fileContents: Record<string, string>): string {
   const paths = Object.keys(fileContents);
@@ -133,12 +172,14 @@ function buildProjectContext(fileContents: Record<string, string>): string {
 export function useAIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MSG]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [provider, setProvider] = useState("lovable");
-  const [model, setModel] = useState("gemini-flash");
+  const [provider, setProvider] = useState("cerebras");
+  const [model, setModel] = useState("gpt-oss-120b");
   const [userApiKeys, setUserApiKeys] = useState<Record<string, string>>({});
   const [initialPromptSent, setInitialPromptSent] = useState(false);
+  const [designTokens, setDesignTokens] = useState<DesignTokens | null>(null);
 
   const fileWriteRef = useRef<((files: ParsedFile[], deps: string[]) => void) | null>(null);
+  const sandboxRef = useRef<any>(null); // To allow hook to call sandbox directly
   const fileContentsRef = useRef<Record<string, string>>({});
 
   /** Update the current project files (for context) */
@@ -201,6 +242,7 @@ export function useAIChat() {
             model,
             userApiKey: provider !== "lovable" ? userApiKeys[provider] : undefined,
             projectContext,
+            designRules: designTokens ? JSON.stringify(designTokens, null, 2) : undefined,
           }),
         });
 
@@ -239,11 +281,56 @@ export function useAIChat() {
           }
         }
 
-        // After streaming, parse files and deps then dispatch
+        // After streaming, parse actions and dispatch
         const parsedFiles = parseFileBlocks(assistantContent);
         const parsedDeps = parseDepsBlock(assistantContent);
-        if ((parsedFiles.length > 0 || parsedDeps.length > 0) && fileWriteRef.current) {
-          fileWriteRef.current(parsedFiles, parsedDeps);
+        const parsedShell = parseShellAction(assistantContent);
+        const parsedRead = parseReadAction(assistantContent);
+        const parsedSearch = parseSearchAction(assistantContent);
+
+        if (fileWriteRef.current) {
+          if (parsedFiles.length > 0 || parsedDeps.length > 0) {
+            fileWriteRef.current(parsedFiles, parsedDeps);
+          }
+
+          // Handle shell commands
+          if (parsedShell.length > 0 && sandboxRef.current) {
+            for (const cmd of parsedShell) {
+              const res = await sandboxRef.current.execCommand(cmd);
+              const output = `Command "${cmd}" finished.\nSTDOUT:\n${res?.stdout || "none"}\nSTDERR:\n${res?.stderr || "none"}`;
+              sendMessage(`[SYSTEM ACTION] ${output}`);
+            }
+          }
+
+          // Handle read files
+          if (parsedRead.length > 0 && sandboxRef.current) {
+            for (const path of parsedRead) {
+              const content = await sandboxRef.current.readFile(`/home/user/app/${path.replace(/^\//, "")}`);
+              const output = content ? `File "${path}" content:\n\`\`\`\n${content}\n\`\`\`` : `Error: Could not read file "${path}"`;
+              sendMessage(`[SYSTEM ACTION] ${output}`);
+            }
+          }
+
+          // Handle search
+          if (parsedSearch.length > 0) {
+            for (const query of parsedSearch) {
+              try {
+                const response = await supabase.functions.invoke("web-search", {
+                  body: {
+                    query,
+                    userApiKey: userApiKeys.tavily
+                  },
+                });
+                const data = response.data;
+                const results = data.results?.map((r: any) => `- [${r.title}](${r.url}): ${r.content}`).join("\n") || "No results found.";
+                const answer = data.answer ? `\nSummary: ${data.answer}\n` : "";
+                const output = `Search results for "${query}":\n${answer}${results}`;
+                sendMessage(`[SYSTEM ACTION] ${output}`);
+              } catch (err: any) {
+                sendMessage(`[SYSTEM ACTION] Error during search for "${query}": ${err.message}`);
+              }
+            }
+          }
         }
       } catch (e: any) {
         upsertAssistant(`\n\n⚠️ Error: ${e.message}`);
@@ -266,7 +353,10 @@ export function useAIChat() {
     sendMessage,
     initialPromptSent,
     setInitialPromptSent,
+    designTokens,
+    setDesignTokens,
     fileWriteRef,
+    sandboxRef,
     updateProjectFiles,
   };
 }

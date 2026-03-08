@@ -22,7 +22,7 @@ export function PreviewPanel({ isBooting, isReady, bootError, previewUrl, onBoot
   }, [isReady, isBooting]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="h-full flex flex-col bg-[hsl(var(--background))] relative">
+    <div className="h-full flex flex-col bg-white relative">
       {/* Preview URL bar */}
       <div
         className="h-9 flex items-center gap-2 px-3 border-b border-border/30 bg-[hsl(var(--sidebar-background))] shrink-0"
@@ -48,25 +48,25 @@ export function PreviewPanel({ isBooting, isReady, bootError, previewUrl, onBoot
 
       {/* Loading overlay */}
       <div
-        className="absolute inset-0 flex flex-col items-center justify-center bg-[hsl(var(--background))] z-10"
+        className="absolute inset-0 flex flex-col items-center justify-center bg-white z-10"
         style={{ display: isReady && previewUrl ? "none" : "flex" }}
       >
         <div className="text-center space-y-4">
           <div className="relative">
-            <div className="h-16 w-16 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center mx-auto">
-              <Monitor className="h-8 w-8 text-muted-foreground/20" />
+            <div className="h-16 w-16 rounded-2xl bg-black/5 border border-black/10 flex items-center justify-center mx-auto">
+              <Monitor className="h-8 w-8 text-black/20" />
             </div>
           </div>
           <div className="space-y-2">
-            <p className="text-sm font-medium text-foreground/60">
+            <p className="text-sm font-medium text-black/80">
               {bootError ? "Failed to start" : isBooting ? "Creating sandbox" : "Preview"}
             </p>
-            <p className="text-xs text-muted-foreground/40">
+            <p className="text-xs text-black/50">
               {bootError
                 ? bootError
                 : isBooting
-                ? "Setting up E2B sandbox and installing dependencies..."
-                : "Your app preview will appear here"}
+                  ? "Setting up E2B sandbox and installing dependencies..."
+                  : "Your app preview will appear here"}
             </p>
           </div>
           {isBooting && (

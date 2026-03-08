@@ -21,9 +21,8 @@ const Navbar = () => {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
             <Zap className="h-4 w-4 text-primary" />
           </div>
-          <span className="text-lg font-bold tracking-tight">
-            <span className="gradient-text">Forge</span>
-            <span className="text-muted-foreground font-mono text-sm ml-1">AI</span>
+          <span className="text-xl font-extrabold tracking-tighter">
+            <span className="text-foreground">AURA</span>
           </span>
         </div>
 

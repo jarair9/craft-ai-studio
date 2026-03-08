@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -21,6 +20,13 @@ const Auth = () => {
   const { user } = useAuth();
 
   useEffect(() => {
+    const isConfigured = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!isConfigured) {
+      toast.error("Supabase is not configured. Please add your credentials to the .env file.", {
+        duration: 10000,
+        position: "top-center",
+      });
+    }
     if (user) navigate("/");
   }, [user, navigate]);
 
@@ -61,8 +67,11 @@ const Auth = () => {
   };
 
   const handleGoogleSignIn = async () => {
-    const { error } = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
     });
     if (error) toast.error(error.message);
   };
@@ -81,9 +90,8 @@ const Auth = () => {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
               <Zap className="h-5 w-5 text-primary" />
             </div>
-            <span className="text-2xl font-bold tracking-tight">
-              <span className="gradient-text">Forge</span>
-              <span className="text-muted-foreground font-mono text-base ml-1">AI</span>
+            <span className="text-2xl font-black tracking-tighter">
+              <span className="text-foreground">AURA</span>
             </span>
           </div>
           <h1 className="text-2xl font-bold text-foreground">
@@ -93,8 +101,8 @@ const Auth = () => {
             {mode === "signin"
               ? "Sign in to continue building"
               : mode === "signup"
-              ? "Start building with AI"
-              : "We'll send you a reset link"}
+                ? "Start building with AI"
+                : "We'll send you a reset link"}
           </p>
         </div>
 
@@ -204,10 +212,10 @@ const Auth = () => {
               {loading
                 ? "Loading..."
                 : mode === "signin"
-                ? "Sign In"
-                : mode === "signup"
-                ? "Create Account"
-                : "Send Reset Link"}
+                  ? "Sign In"
+                  : mode === "signup"
+                    ? "Create Account"
+                    : "Send Reset Link"}
             </Button>
           </form>
 

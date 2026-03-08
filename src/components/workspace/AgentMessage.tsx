@@ -56,8 +56,8 @@ function FileActionCard({ segment }: { segment: ActionSegment }) {
             transition={{ duration: 0.15 }}
             className="overflow-hidden"
           >
-            <div className="border-t border-primary/10 bg-secondary/30 max-h-[300px] overflow-auto">
-              <pre className="p-3 text-[11px] leading-[18px] font-mono text-foreground/70">
+            <div className="border-t border-primary/10 bg-secondary/30 max-h-[300px] overflow-auto custom-scrollbar">
+              <pre className="p-3 text-[11px] leading-[18px] font-mono text-foreground/70 whitespace-pre-wrap break-all">
                 <code>{segment.content}</code>
               </pre>
             </div>
@@ -113,9 +113,10 @@ export function AgentMessage({ content, isStreaming }: AgentMessageProps) {
           <div
             key={`text-${i}`}
             className={cn(
-              "prose prose-invert prose-sm max-w-none text-[13px] leading-relaxed",
+              "prose prose-invert prose-sm max-w-none text-[13px] leading-relaxed break-words overflow-hidden",
               "[&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2",
-              "[&>pre]:bg-secondary/60 [&>pre]:rounded-lg [&>pre]:p-3 [&>pre]:text-[12px] [&>pre]:border [&>pre]:border-border/30"
+              "[&>pre]:bg-secondary/60 [&>pre]:rounded-lg [&>pre]:p-3 [&>pre]:text-[12px] [&>pre]:border [&>pre]:border-border/30",
+              "[&>pre]:overflow-x-auto [&>pre]:whitespace-pre-wrap [&>pre]:break-all"
             )}
           >
             <ReactMarkdown>{seg.content}</ReactMarkdown>

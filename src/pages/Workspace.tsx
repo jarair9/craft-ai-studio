@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, Zap, Settings, Eye, Code2, Share2,
+  ArrowLeft, Zap, Settings, Eye, Code2, Share2, Palette, Terminal
 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,9 +15,11 @@ import { PreviewPanel } from "@/components/workspace/PreviewPanel";
 import { ApiKeySettings } from "@/components/workspace/ApiKeySettings";
 import { useAIChat, type ParsedFile } from "@/hooks/useAIChat";
 import { useSandbox } from "@/hooks/useSandbox";
+import { TerminalPanel } from "@/components/workspace/TerminalPanel";
+import { ThemeSettings } from "@/components/workspace/ThemeSettings";
 import { cn } from "@/lib/utils";
 
-type RightView = "preview" | "code";
+type RightView = "preview" | "code" | "design";
 
 const Workspace = () => {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +27,7 @@ const Workspace = () => {
   const { user } = useAuth();
   const [rightView, setRightView] = useState<RightView>("preview");
   const [showSettings, setShowSettings] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [writingFiles, setWritingFiles] = useState<string[]>([]);
@@ -42,6 +45,14 @@ const Workspace = () => {
 
   const chat = useAIChat();
   const sandbox = useSandbox(id);
+  const sandboxIdRef = useRef(sandbox.sandboxId);
+
+  // Keep ref in sync
+  useEffect(() => {
+    sandboxIdRef.current = sandbox.sandboxId;
+    chat.sandboxRef.current = sandbox;
+  }, [sandbox.sandboxId, sandbox]);
+
   const didInit = useRef(false);
 
   // Keep AI chat aware of current project files
@@ -54,43 +65,55 @@ const Workspace = () => {
     chat.fileWriteRef.current = async (files: ParsedFile[], deps: string[]) => {
       setBuildComplete(false);
 
-      // Install dependencies first
-      if (deps.length > 0 && sandbox.sandboxId) {
-        setWritingFiles(["📦 Installing " + deps.join(", ") + "..."]);
-        await sandbox.execCommand(`cd /home/user/app && npm install ${deps.join(" ")}`);
-        await new Promise((r) => setTimeout(r, 500));
+      // 1. Wait if sandbox is currently being created (Wait for full boot/URL)
+      let activeId = sandboxIdRef.current;
+      if (!sandbox.sandboxUrl) {
+        setWritingFiles(["⏳ Waiting for ignition..."]);
+        // Patience: wait until URL is ready (indicates port check passed)
+        for (let i = 0; i < 150; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          if (sandbox.sandboxUrl) {
+            activeId = sandboxIdRef.current;
+            break;
+          }
+        }
       }
 
-      // Show writing indicators and update local state
+      if (!activeId) {
+        setWritingFiles(["❌ Sandbox boot timeout."]);
+        return;
+      }
+
+      // 2. Install dependencies (speedy flags already set)
+      if (deps.length > 0) {
+        setWritingFiles(["📦 Installing " + deps.join(", ") + "..."]);
+        await sandbox.execCommand(`cd /home/user/app && npm install ${deps.join(" ")} --no-package-lock --no-audit --no-fund --prefer-offline --legacy-peer-deps`);
+      }
+
+      // 3. Write all files
       for (const f of files) {
-        setWritingFiles((prev) => {
-          const filtered = prev.filter((p) => !p.startsWith("📦"));
-          return [...filtered, `→ Writing ${f.path}`];
-        });
+        setWritingFiles((prev) => [...prev, `→ Writing ${f.path}`]);
+
+        // Update local editor state
         setFileContents((prev) => ({ ...prev, [f.path]: f.content }));
 
-        // Write file to E2B sandbox
-        if (sandbox.sandboxId) {
-          const fullPath = f.path.startsWith("/") ? f.path : `/home/user/app/${f.path}`;
-          await sandbox.writeFile(fullPath, f.content);
-        }
+        // Update E2B sandbox (absolute path)
+        const fullPath = `/home/user/app/${f.path.replace(/^\//, "")}`;
+        await sandbox.writeFile(fullPath, f.content);
 
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 100));
       }
 
-      // Auto-select first file and switch to code view
+      // 4. Update UI
       if (files.length > 0) {
         setSelectedFilePath(files[0].path);
       }
 
-      // Clear indicators
-      setTimeout(() => {
-        setWritingFiles([]);
-        setBuildComplete(true);
-        setTimeout(() => setBuildComplete(false), 4000);
-      }, 400);
+      setWritingFiles([]);
+      setBuildComplete(true);
+      setTimeout(() => setBuildComplete(false), 3000);
     };
-  }, [sandbox.sandboxId, sandbox.writeFile, sandbox.execCommand]);
+  }, [sandbox.writeFile, sandbox.execCommand]);
 
   // Send initial prompt from project description
   useEffect(() => {
@@ -153,6 +176,16 @@ const Workspace = () => {
             <Code2 className="h-4 w-4" />
           </button>
           <button
+            onClick={() => setRightView("design")}
+            className={cn(
+              "p-1.5 rounded-md transition-all",
+              rightView === "design" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+            title="Design Rules"
+          >
+            <Palette className="h-4 w-4" />
+          </button>
+          <button
             onClick={() => setShowSettings(true)}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-all"
             title="Settings"
@@ -162,6 +195,15 @@ const Workspace = () => {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("h-7 w-7", showTerminal && "bg-secondary")}
+            onClick={() => setShowTerminal(!showTerminal)}
+            title="Terminal"
+          >
+            <Terminal className="h-3.5 w-3.5" />
+          </Button>
           <Button variant="default" size="sm" className="h-7 text-[11px] gap-1.5 font-medium">
             <Share2 className="h-3 w-3" /> Share
           </Button>
@@ -169,8 +211,8 @@ const Workspace = () => {
       </header>
 
       {/* Main content */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0">
-        <ResizablePanel defaultSize={30} minSize={22} maxSize={45}>
+      <ResizablePanelGroup direction="horizontal" className="flex-1 min-h-0" id="main-group">
+        <ResizablePanel defaultSize={30} minSize={22} maxSize={45} id="chat-panel" order={1}>
           <ChatPanel
             messages={chat.messages}
             isStreaming={chat.isStreaming}
@@ -186,51 +228,85 @@ const Workspace = () => {
 
         <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
 
-        <ResizablePanel defaultSize={70} minSize={45}>
-          <div className="h-full relative overflow-hidden">
-            {/* Preview — always mounted */}
-            <div
-              className={cn(
-                "absolute inset-0 transition-opacity duration-200",
-                rightView === "preview" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
-              )}
-            >
-              <PreviewPanel
-                isBooting={sandbox.isCreating}
-                isReady={!!sandbox.sandboxUrl}
-                bootError={null}
-                previewUrl={sandbox.sandboxUrl}
-                onBoot={sandbox.createSandbox}
-                onRetry={sandbox.createSandbox}
-              />
-            </div>
+        <ResizablePanel defaultSize={70} minSize={45} id="preview-panel" order={2}>
+          <ResizablePanelGroup direction="vertical" id="right-group">
+            <ResizablePanel defaultSize={showTerminal ? 70 : 100} id="workspace-view" order={1}>
+              <div className="h-full relative overflow-hidden">
+                {/* Preview — always mounted */}
+                <div
+                  className={cn(
+                    "absolute inset-0 transition-opacity duration-200",
+                    rightView === "preview" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+                  )}
+                >
+                  <PreviewPanel
+                    isBooting={sandbox.isCreating}
+                    isReady={!!sandbox.sandboxUrl}
+                    bootError={sandbox.bootError}
+                    previewUrl={sandbox.sandboxUrl}
+                    onBoot={sandbox.createSandbox}
+                    onRetry={sandbox.createSandbox}
+                  />
+                </div>
 
-            {/* Code view */}
-            <div
-              className={cn(
-                "absolute inset-0 transition-opacity duration-200",
-                rightView === "code" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
-              )}
-            >
-              <ResizablePanelGroup direction="horizontal">
-                <ResizablePanel defaultSize={28} minSize={18} maxSize={40}>
-                  <FileExplorer
-                    filePaths={filePaths}
-                    selectedPath={selectedFilePath}
-                    onFileClick={handleFileClick}
-                    projectName={project?.name}
-                  />
+                {/* Code view */}
+                <div
+                  className={cn(
+                    "absolute inset-0 transition-opacity duration-200",
+                    rightView === "code" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+                  )}
+                >
+                  <ResizablePanelGroup direction="horizontal" id="code-group">
+                    <ResizablePanel defaultSize={28} minSize={18} maxSize={40} id="file-explorer" order={1}>
+                      <FileExplorer
+                        filePaths={filePaths}
+                        selectedPath={selectedFilePath}
+                        onFileClick={handleFileClick}
+                        projectName={project?.name}
+                      />
+                    </ResizablePanel>
+                    <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
+                    <ResizablePanel defaultSize={72} minSize={40} id="code-viewer" order={2}>
+                      <CodeViewer
+                        filePath={selectedFilePath}
+                        content={currentContent}
+                      />
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
+                </div>
+
+                {/* Design Rules view */}
+                <div
+                  className={cn(
+                    "absolute inset-0 transition-opacity duration-200 p-6 overflow-y-auto bg-[hsl(var(--sidebar-background))]",
+                    rightView === "design" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"
+                  )}
+                >
+                  <div className="max-w-xl mx-auto">
+                    <ThemeSettings
+                      onUpdate={(tokens) => chat.setDesignTokens(tokens)}
+                      initialTokens={chat.designTokens || undefined}
+                    />
+                  </div>
+                </div>
+              </div>
+            </ResizablePanel>
+
+            {showTerminal && (
+              <>
+                <ResizableHandle className="h-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
+                <ResizablePanel defaultSize={30} minSize={15} id="terminal-view" order={2}>
+                  <div className="h-full bg-[hsl(var(--background))] border-t border-border/10">
+                    <TerminalPanel
+                      lines={sandbox.terminalLines}
+                      onCommand={sandbox.execCommand}
+                      isDisabled={!sandbox.sandboxId}
+                    />
+                  </div>
                 </ResizablePanel>
-                <ResizableHandle className="w-[1px] bg-border/30 hover:bg-primary/40 transition-colors" />
-                <ResizablePanel defaultSize={72} minSize={40}>
-                  <CodeViewer
-                    filePath={selectedFilePath}
-                    content={currentContent}
-                  />
-                </ResizablePanel>
-              </ResizablePanelGroup>
-            </div>
-          </div>
+              </>
+            )}
+          </ResizablePanelGroup>
         </ResizablePanel>
       </ResizablePanelGroup>
 

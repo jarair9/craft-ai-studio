@@ -14,9 +14,12 @@ interface ApiKeySettingsProps {
 }
 
 const PROVIDERS = [
+  { id: "openai", name: "OpenAI", placeholder: "sk-..." },
+  { id: "anthropic", name: "Anthropic", placeholder: "sk-ant-..." },
+  { id: "gemini", name: "Google Gemini", placeholder: "AIza..." },
   { id: "groq", name: "Groq", placeholder: "gsk_..." },
-  { id: "mistral", name: "Mistral", placeholder: "..." },
-  { id: "openrouter", name: "OpenRouter", placeholder: "sk-or-..." },
+  { id: "cerebras", name: "Cerebras", placeholder: "csk_..." },
+  { id: "tavily", name: "Tavily Search", placeholder: "tvly-..." },
 ];
 
 export function ApiKeySettings({ isOpen, onClose, onKeysUpdate }: ApiKeySettingsProps) {
@@ -73,7 +76,7 @@ export function ApiKeySettings({ isOpen, onClose, onKeysUpdate }: ApiKeySettings
           <h2 className="text-lg font-semibold">AI Provider Keys</h2>
         </div>
         <p className="text-xs text-muted-foreground">
-          ForgeAI (built-in) works without a key. Add keys below to use Groq, Mistral, or OpenRouter.
+          Cerebras (built-in) is now the primary AI engine for Craft AI Studio.
         </p>
 
         <div className="space-y-3">

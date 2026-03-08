@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+/// <reference lib="deno.ns" />
 import { Sandbox } from "npm:e2b@2.0.2";
 
 const corsHeaders = {
@@ -7,7 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -17,7 +17,7 @@ serve(async (req) => {
     const apiKey = Deno.env.get("E2B_API_KEY");
     if (!apiKey) throw new Error("E2B_API_KEY is not configured");
 
-    let result: unknown;
+    let result: any;
 
     switch (action) {
       case "create": {
@@ -25,9 +25,13 @@ serve(async (req) => {
           apiKey,
           timeoutMs: (timeout || 300) * 1000,
         });
+
+        // Ensure we handle different SDK versions gracefully
+        const host = (sandbox as any).host || (sandbox as any).getHost?.() || sandbox.sandboxId;
+
         result = {
           sandboxID: sandbox.sandboxId,
-          clientID: sandbox.sandboxId,
+          hostname: host,
         };
         break;
       }
@@ -44,17 +48,18 @@ serve(async (req) => {
         const sandbox = await Sandbox.connect(sandboxId, { apiKey });
 
         if (background) {
-          // For background/long-running processes, start and catch the inevitable timeout
           try {
             await sandbox.commands.run(cmd, { timeoutMs: 3000 });
             result = { stdout: "Process completed", stderr: "", exitCode: 0 };
           } catch (bgErr: any) {
             if (bgErr.name === "TimeoutError") {
-              // Timeout means the process is still running (expected for dev servers)
               result = { stdout: "Process started in background", stderr: "", exitCode: 0 };
             } else if (bgErr.name === "CommandExitError" && bgErr.result) {
-              // Process exited with error - return the details
-              result = { stdout: bgErr.result.stdout || "", stderr: bgErr.result.stderr || "", exitCode: bgErr.result.exitCode };
+              result = {
+                stdout: bgErr.result.stdout || "",
+                stderr: bgErr.result.stderr || "",
+                exitCode: bgErr.result.exitCode
+              };
             } else {
               throw bgErr;
             }
@@ -99,6 +104,20 @@ serve(async (req) => {
         const sandbox = await Sandbox.connect(sandboxId, { apiKey });
         await sandbox.files.write(path, content);
         result = { success: true };
+        break;
+      }
+
+      case "checkPort": {
+        if (!sandboxId) throw new Error("sandboxId required");
+        const sandbox = await Sandbox.connect(sandboxId, { apiKey });
+        const port = Number(cmd) || 3000;
+        try {
+          // Robust check: Use Node to see if the port is reachable
+          const check = await sandbox.commands.run(`node -e "const http = require('http'); const req = http.request({host: '127.0.0.1', port: ${port}, method: 'HEAD', timeout: 800}, (res) => { process.exit(0); }); req.on('error', () => process.exit(1)); req.on('timeout', () => process.exit(1)); req.end();"`, { timeoutMs: 2000 });
+          result = { ready: check.exitCode === 0 };
+        } catch {
+          result = { ready: false };
+        }
         break;
       }
 

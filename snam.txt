@@ -1,0 +1,300 @@
+import { useState, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
+
+export interface SandboxFile {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  children?: SandboxFile[];
+}
+
+export interface TerminalLine {
+  id: string;
+  type: "input" | "output" | "error";
+  content: string;
+  timestamp: Date;
+}
+
+export function useSandbox(projectId: string | undefined) {
+  const [sandboxId, setSandboxId] = useState<string | null>(null);
+  const [sandboxUrl, setSandboxUrl] = useState<string | null>(null);
+  const [files, setFiles] = useState<SandboxFile[]>([]);
+  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([]);
+  const [isCreating, setIsCreating] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{ path: string; content: string } | null>(null);
+
+  const addTerminalLine = useCallback((type: TerminalLine["type"], content: string) => {
+    setTerminalLines((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), type, content, timestamp: new Date() },
+    ]);
+  }, []);
+
+  const callSandbox = useCallback(async (body: Record<string, unknown>) => {
+    const { data, error } = await supabase.functions.invoke("sandbox", { body });
+    if (error) throw new Error(error.message);
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }, []);
+
+  const createSandbox = useCallback(async () => {
+    if (isCreating) return;
+    setIsCreating(true);
+    setBootError(null);
+    addTerminalLine("output", "Creating sandbox...");
+    try {
+      const data = await callSandbox({ action: "create" });
+      const id = data.sandboxID || data.sandboxId || data.id;
+      setSandboxId(id);
+
+      const previewUrl = `https://3000-${id}.e2b.dev`;
+
+      if (projectId) {
+        await supabase
+          .from("projects")
+          .update({ sandbox_id: id, sandbox_url: previewUrl } as any)
+          .eq("id", projectId);
+      }
+
+      addTerminalLine("output", `Sandbox created: ${id}`);
+
+      // Ultra-fast Bootstrap: Write files directly
+      addTerminalLine("output", "Preparing environment...");
+      try {
+        const packageJson = {
+          name: "aura-app",
+          private: true,
+          version: "0.0.0",
+          type: "module",
+          scripts: { "dev": "vite" },
+          dependencies: {
+            "react": "^18.3.1",
+            "react-dom": "^18.3.1"
+          },
+          devDependencies: {
+            "vite": "^5.4.0",
+            "@vitejs/plugin-react": "^4.3.0",
+            "typescript": "^5.5.3"
+          }
+        };
+
+        // 1. Setup filesystem
+        await callSandbox({ action: "exec", sandboxId: id, cmd: "mkdir -p app/src" });
+
+        // 2. Write project files
+        await callSandbox({ action: "writeFile", sandboxId: id, path: "/home/user/app/package.json", content: JSON.stringify(packageJson, null, 2) });
+        await callSandbox({
+          action: "writeFile",
+          sandboxId: id,
+          path: "/home/user/app/vite.config.ts",
+          content: `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+export default defineConfig({
+  plugins: [react()],
+  server: { host: '0.0.0.0', port: 3000, strictPort: true, allowedHosts: true },
+});`
+        });
+        await callSandbox({
+          action: "writeFile",
+          sandboxId: id,
+          path: "/home/user/app/index.html",
+          content: `<!DOCTYPE html><html><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`
+        });
+        await callSandbox({
+          action: "writeFile",
+          sandboxId: id,
+          path: "/home/user/app/src/main.tsx",
+          content: `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode><App /></React.StrictMode>
+);`
+        });
+        await callSandbox({
+          action: "writeFile",
+          sandboxId: id,
+          path: "/home/user/app/src/App.tsx",
+          content: `import React from 'react';
+export default function App() {
+  return <div style={{padding: '40px', textAlign: 'center'}}><h1>AURA Sandbox Ready</h1><p>The AI is now generating your files...</p></div>;
+}`
+        });
+        await callSandbox({
+          action: "writeFile",
+          sandboxId: id,
+          path: "/home/user/app/tsconfig.json",
+          content: `{
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": false,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src"]
+}`
+        });
+
+        addTerminalLine("output", "Installing core engine...");
+        await callSandbox({
+          action: "exec",
+          sandboxId: id,
+          cmd: "cd /home/user/app && npm install --no-package-lock --no-audit --no-fund --prefer-offline",
+          timeout: 180,
+        });
+
+        addTerminalLine("output", "Igniting dev server...");
+        // CRITICAL: Must use --host 0.0.0.0 for E2B proxy to reach the service
+        await callSandbox({
+          action: "exec",
+          sandboxId: id,
+          cmd: "cd /home/user/app && npx vite --host 0.0.0.0 --port 3000",
+          background: true,
+        });
+
+        // Polling loop to wait for server (granular check for up to 60 seconds)
+        let isReady = false;
+        for (let i = 0; i < 40; i++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          try {
+            const check = await callSandbox({ action: "checkPort", sandboxId: id, cmd: "3000" });
+            if (check.ready) {
+              addTerminalLine("output", "✓ Port 3000 detected!");
+              isReady = true;
+              break;
+            }
+          } catch (e) { }
+          addTerminalLine("output", `Verifying ignition... (${i + 1}/40)`);
+        }
+
+        if (isReady) {
+          setSandboxUrl(`${previewUrl}?t=${Date.now()}`);
+          addTerminalLine("output", "✓ Sandbox ignition complete.");
+        } else {
+          // Final attempt to see what went wrong
+          try {
+            const logs = await callSandbox({ action: "exec", sandboxId: id, cmd: "tail -n 20 /home/user/app/server.log || echo 'No logs found'" });
+            addTerminalLine("error", `Ignition timeout. Last logs: ${logs.stdout || logs.stderr}`);
+          } catch (e) { }
+          throw new Error("Port 3000 timeout. The server took too long to start.");
+        }
+      } catch (bootstrapErr: any) {
+        setBootError(bootstrapErr.message);
+        addTerminalLine("error", `Ignition failed: ${bootstrapErr.message}`);
+        console.error("Sandbox bootstrap error:", bootstrapErr);
+      }
+
+      return id;
+    } catch (e: any) {
+      addTerminalLine("error", `Failed to create sandbox: ${e.message}`);
+      throw e;
+    } finally {
+      setIsCreating(false);
+    }
+  }, [projectId, callSandbox, isCreating, addTerminalLine]);
+
+  const listFiles = useCallback(
+    async (sbId?: string, dirPath = "/home/user") => {
+      const id = sbId || sandboxId;
+      if (!id) return;
+      try {
+        const data = await callSandbox({ action: "listFiles", sandboxId: id, path: dirPath });
+        const items: SandboxFile[] = (data || []).map((f: any) => ({
+          name: f.name,
+          path: f.path || `${dirPath}/${f.name}`,
+          type: f.type === "dir" || f.isDir ? "dir" : "file",
+        }));
+        setFiles(items);
+        return items;
+      } catch (e: any) {
+        addTerminalLine("error", `ls failed: ${e.message}`);
+        return [];
+      }
+    },
+    [sandboxId, callSandbox, addTerminalLine]
+  );
+
+  const readFile = useCallback(
+    async (filePath: string) => {
+      if (!sandboxId) return;
+      try {
+        const data = await callSandbox({ action: "readFile", sandboxId, path: filePath });
+        setSelectedFile({ path: filePath, content: data.content || "" });
+        return data.content;
+      } catch (e: any) {
+        addTerminalLine("error", `cat ${filePath}: ${e.message}`);
+      }
+    },
+    [sandboxId, callSandbox, addTerminalLine]
+  );
+
+  const writeFile = useCallback(
+    async (filePath: string, content: string) => {
+      if (!sandboxId) return;
+      try {
+        await callSandbox({ action: "writeFile", sandboxId, path: filePath, content });
+        addTerminalLine("output", `Wrote ${filePath}`);
+      } catch (e: any) {
+        addTerminalLine("error", `Write failed: ${e.message}`);
+      }
+    },
+    [sandboxId, callSandbox, addTerminalLine]
+  );
+
+  const execCommand = useCallback(
+    async (cmd: string) => {
+      if (!sandboxId) return;
+      addTerminalLine("input", `$ ${cmd}`);
+      try {
+        const data = await callSandbox({ action: "exec", sandboxId, cmd });
+        if (data.stdout) addTerminalLine("output", data.stdout);
+        if (data.stderr) addTerminalLine("error", data.stderr);
+        return data;
+      } catch (e: any) {
+        addTerminalLine("error", e.message);
+      }
+    },
+    [sandboxId, callSandbox, addTerminalLine]
+  );
+
+  const killSandbox = useCallback(async () => {
+    if (!sandboxId) return;
+    try {
+      await callSandbox({ action: "kill", sandboxId });
+      setSandboxId(null);
+      setSandboxUrl(null);
+      addTerminalLine("output", "Sandbox terminated.");
+    } catch (e: any) {
+      addTerminalLine("error", `Kill failed: ${e.message}`);
+    }
+  }, [sandboxId, callSandbox, addTerminalLine]);
+
+  return {
+    sandboxId,
+    sandboxUrl,
+    files,
+    selectedFile,
+    terminalLines,
+    isCreating,
+    bootError,
+    createSandbox,
+    listFiles,
+    readFile,
+    writeFile,
+    execCommand,
+    killSandbox,
+    setSelectedFile,
+  };
+}
