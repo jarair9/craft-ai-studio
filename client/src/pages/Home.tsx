@@ -28,20 +28,22 @@ export default function Home() {
             </div>
             <span className="font-semibold text-lg">Craft AI Studio</span>
           </div>
-          <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Features
+            <div className="hidden md:flex items-center gap-8">
+              <a href="#features" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Features
+              </a>
+              <a href="#agents" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Agents
+              </a>
+              <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                Pricing
+              </a>
+            </div>
+            <a href="/workspace">
+              <Button variant="default" size="sm">
+                Get Started
+              </Button>
             </a>
-            <a href="#agents" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Agents
-            </a>
-            <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-              Pricing
-            </a>
-          </div>
-          <Button variant="default" size="sm">
-            Get Started
-          </Button>
         </div>
       </nav>
 
@@ -72,9 +74,11 @@ export default function Home() {
 
             {/* CTA Section */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <Button size="lg" className="gap-2">
-                Start Building <ArrowRight className="w-4 h-4" />
-              </Button>
+              <a href="/workspace">
+                <Button size="lg" className="gap-2">
+                  Start Building <ArrowRight className="w-4 h-4" />
+                </Button>
+              </a>
               <Button size="lg" variant="outline">
                 View Documentation
               </Button>
@@ -204,9 +208,11 @@ export default function Home() {
             <p className="text-lg text-muted-foreground mb-8">
               Start building your next project with Craft AI Studio today. Experience the future of full-stack development.
             </p>
-            <Button size="lg" className="gap-2">
-              Get Started Now <ArrowRight className="w-4 h-4" />
-            </Button>
+            <a href="/workspace">
+              <Button size="lg" className="gap-2">
+                Get Started Now <ArrowRight className="w-4 h-4" />
+              </Button>
+            </a>
           </div>
         </div>
       </section>
