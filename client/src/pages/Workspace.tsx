@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { CodeHighlighter } from '@/components/CodeHighlighter';
+import { trpc } from '@/lib/trpc';
 import { 
   Send, 
   Code2, 
@@ -20,7 +22,8 @@ import {
   X,
   CheckCircle2,
   Circle,
-  Copy
+  Copy,
+  Loader
 } from 'lucide-react';
 
 interface FileItem {
@@ -44,6 +47,7 @@ interface Message {
   role: 'user' | 'agent';
   content: string;
   timestamp: Date;
+  code?: string;
 }
 
 const defaultFileStructure: FileItem[] = [
@@ -129,10 +133,13 @@ export default function Workspace() {
   const [activeFile, setActiveFile] = useState<FileItem | null>(defaultFileStructure[1]?.children?.[0] || null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [rightPanel, setRightPanel] = useState<'code' | 'preview'>('code');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // tRPC mutations for AI
+  const generateCodeMutation = trpc.ai.generateCode.useMutation();
+  const chatMutation = trpc.ai.chat.useMutation();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -174,19 +181,70 @@ export default function Workspace() {
       timestamp: new Date()
     };
     setMessages(prev => [...prev, userMessage]);
+    const userInput = input;
     setInput('');
-    setIsLoading(true);
 
-    setTimeout(() => {
-      const agentMessage: Message = {
+    try {
+      // Call the AI chat endpoint
+      const result = await chatMutation.mutateAsync({
+        messages: [
+          ...messages.map(m => ({
+            role: m.role as 'user' | 'assistant' | 'system',
+            content: m.content
+          })),
+          { role: 'user', content: userInput }
+        ],
+        context: 'Building a Netflix clone application'
+      });
+
+      if (result.success) {
+        const agentMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'agent',
+          content: result.response,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, agentMessage]);
+
+        // If the response contains code generation request, generate code
+        if (userInput.toLowerCase().includes('generate') || userInput.toLowerCase().includes('code')) {
+          const codeResult = await generateCodeMutation.mutateAsync({
+            prompt: userInput,
+            language: 'typescript',
+            context: 'Netflix clone application'
+          });
+
+          if (codeResult.success && codeResult.code) {
+            const codeMessage: Message = {
+              id: (Date.now() + 2).toString(),
+              role: 'agent',
+              content: 'Here is the generated code:',
+              code: codeResult.code,
+              timestamp: new Date()
+            };
+            setMessages(prev => [...prev, codeMessage]);
+
+            // Update active file with generated code
+            const newFile: FileItem = {
+              name: 'generated.ts',
+              path: 'generated/generated.ts',
+              type: 'file',
+              content: codeResult.code
+            };
+            setActiveFile(newFile);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'agent',
-        content: `I'll help you build this Netflix clone. Analyzing your requirements and generating the code structure. The architecture includes:\n\n1. Backend: Express.js with SQLite database\n2. Frontend: React with Framer Motion animations\n3. UI: Netflix-style dark theme with scroll effects\n\nGenerated code is ready in the editor.`,
+        content: `Error: ${error instanceof Error ? error.message : 'Failed to process request'}`,
         timestamp: new Date()
       };
-      setMessages(prev => [...prev, agentMessage]);
-      setIsLoading(false);
-    }, 1000);
+      setMessages(prev => [...prev, errorMessage]);
+    }
   };
 
   const toggleTask = (id: string) => {
@@ -243,6 +301,8 @@ export default function Workspace() {
     }
   };
 
+  const isLoading = generateCodeMutation.isPending || chatMutation.isPending;
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       {/* Top Navigation Bar */}
@@ -258,12 +318,12 @@ export default function Workspace() {
 
         <div className="flex items-center gap-2">
           <ChevronRight className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Auto-Route</span>
+          <span className="text-sm font-medium">Craft AI Studio</span>
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
           <Button variant="outline" size="sm" className="gap-2 text-xs">
-            <span>Gemini 3 Flash</span>
+            <span>Claude 3.5</span>
           </Button>
           <Button variant="ghost" size="sm" className="gap-2">
             <Save className="w-4 h-4" />
@@ -349,7 +409,7 @@ export default function Workspace() {
                   className="gap-2"
                 >
                   {isLoading ? (
-                    <div className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                    <Loader className="w-4 h-4 animate-spin" />
                   ) : (
                     <Play className="w-4 h-4" />
                   )}
@@ -411,10 +471,16 @@ export default function Workspace() {
                   </div>
                 </div>
               )}
-              <ScrollArea className="flex-1">
-                <pre className="p-4 font-mono text-sm text-muted-foreground overflow-auto bg-background whitespace-pre-wrap break-words">
-                  <code>{activeFile?.content || '// Select a file'}</code>
-                </pre>
+              <ScrollArea className="flex-1 p-4">
+                {activeFile?.content ? (
+                  <CodeHighlighter
+                    code={activeFile.content}
+                    language={activeFile.name.endsWith('.tsx') ? 'typescript' : activeFile.name.endsWith('.css') ? 'css' : 'typescript'}
+                    showLineNumbers
+                  />
+                ) : (
+                  <pre className="font-mono text-sm text-muted-foreground">// Select a file</pre>
+                )}
               </ScrollArea>
             </>
           ) : (
